@@ -9,7 +9,7 @@ static class UiLanguage
     {
         public string Source = control.Text;
         public string? Accessible = control.AccessibleName;
-        public string[]? Items = control is ComboBox combo && control.Tag as string != "language-options" ? combo.Items.Cast<object>().Select(i => i.ToString() ?? "").ToArray() : null;
+        public string[]? Items = control is ComboBox combo && control.Tag as string is not ("language-options" or "creator-filter") ? combo.Items.Cast<object>().Select(i => i.ToString() ?? "").ToArray() : null;
         public string[]? Headers = control is DataGridView grid ? grid.Columns.Cast<DataGridViewColumn>().Select(c => c.HeaderText).ToArray() : null;
         public bool Updating;
         public bool ErrorText;

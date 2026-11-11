@@ -49,6 +49,12 @@ public partial class MainForm : Form
     readonly DataGridView authors = Grid();
     readonly DataGridView table = Grid();
     readonly ModernCombo filter = new() { Width = 210 };
+    readonly ModernCombo authorFilter = new() { Width = 220, Tag = "creator-filter", AccessibleName = "Фильтр автора" };
+    sealed record AuthorFilterItem(string? Key, string Label)
+    {
+        public override string ToString() => Label;
+    }
+    bool updatingAuthorFilter;
     const int PageSize = 200;
     int currentPage;
     int visiblePostCount;
@@ -82,25 +88,15 @@ public partial class MainForm : Form
         fullScan.Click += async (_, _) => await Run(token => ScanPosts(token, true));
         download.Click += async (_, _) => await Run(DownloadPosts);
         downloadPost.Click += async (_, _) => await ShowDownloadPost();
-        stop.Click += (_, _) => { operation?.Cancel(); stop.Enabled = false; status.Text = "Останавливаю. Завершённые файлы останутся в истории…"; };
+        skipPost.Click += (_, _) => SkipCurrentPost();
+        stop.Click += (_, _) => { operation?.Cancel(); stop.Enabled = false; skipPost.Enabled = false; status.Text = "Останавливаю. Завершённые файлы останутся в истории…"; };
         open.Click += (_, _) => { if (Directory.Exists(root.Text)) OpenPath(root.Text); };
         showHistory.Click += async (_, _) => await ShowHistory();
         filter.SelectedIndexChanged += (_, _) => { if (changingLanguage) return; currentPage = 0; FillPosts(); };
+        authorFilter.SelectedIndexChanged += (_, _) => { if (changingLanguage || updatingAuthorFilter) return; currentPage = 0; FillPosts(); };
         previousPage.Click += (_, _) => { if (currentPage > 0) currentPage--; FillPosts(); };
         nextPage.Click += (_, _) => { currentPage++; FillPosts(); };
         table.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0 && table.Rows[e.RowIndex].Tag is Post p) OpenPath(p.Url); };
-        authors.CurrentCellDirtyStateChanged += (_, _) => { if (authors.IsCurrentCellDirty) authors.CommitEdit(DataGridViewDataErrorContexts.Commit); };
-        authors.CellValueChanged += (_, e) =>
-        {
-            if (loading || e.RowIndex < 0 || e.ColumnIndex != 0) return;
-            var row = authors.Rows[e.RowIndex];
-            if (row.Tag is Creator creator)
-            {
-                var idx = settings.Creators.FindIndex(c => c.Key == creator.Key);
-                settings.Creators[idx] = creator with { Selected = Convert.ToBoolean(row.Cells[0].Value) };
-                row.Tag = settings.Creators[idx]; SaveSettings(); UpdateSummary();
-            }
-        };
         FormClosing += (_, e) =>
         {
             if (operation is not null) { closeAfterStop = true; operation.Cancel(); e.Cancel = true; status.Text = "Сохраняю историю и закрываю приложение…"; }
@@ -174,24 +170,14 @@ public partial class MainForm : Form
         try { Storage.WriteJson(settingsPath, settings); }
         catch (Exception e) { status.Text = "Не удалось сохранить настройки: " + e.Message; }
     }
-    void FillAuthors()
-    {
-        loading = true; authors.Rows.Clear();
-        foreach (var c in settings.Creators)
-        {
-            var i = authors.Rows.Add(c.Selected, c.Name, c.Service, c.Id, catalogDates.TryGetValue(c.Key, out var date) ? date : "Ещё не проверен");
-            authors.Rows[i].Tag = c;
-            authors.Rows[i].Cells["Author"].ToolTipText = $"{c.Name}\n{c.Service} · {c.Id}\n" + Locale.T($"{posts.Count(p => p.Creator.Key == c.Key):N0} постов") + "\n" + Locale.T(Convert.ToString(authors.Rows[i].Cells["State"].Value));
-        }
-        loading = false;
-    }
+    void FillAuthors() => RefreshCreatorViews(false);
     void AddCreator()
     {
         try
         {
             var c = Creator.Parse(authorUrl.Text);
             if (settings.Creators.Any(a => a.Key == c.Key)) { status.Text = "Этот автор уже в списке."; return; }
-            settings.Creators.Add(c); authorUrl.Clear(); FillAuthors(); SaveSettings(); UpdateSummary();
+            settings.Creators.Add(c); authorUrl.Clear(); FillAuthors(); SaveSettings(); currentPage = 0; FillPosts();
         }
         catch (Exception e) { Error(e.Message); }
     }
@@ -236,6 +222,7 @@ public partial class MainForm : Form
         finally
         {
             await RefreshStates();
+            SetDownloadingCreator(null);
             sessionLock?.Dispose(); operation.Dispose(); operation = null;
             SetBusy(false); FillPosts(); progress.Style = ProgressBarStyle.Blocks;
             foreach (var bar in mediaBars) bar.Style = ProgressBarStyle.Blocks;
@@ -247,9 +234,11 @@ public partial class MainForm : Form
         scan.Enabled = fullScan.Enabled = !busy; download.Enabled = !busy && posts.Count > 0;
         root.Enabled = add.Enabled = remove.Enabled = authorUrl.Enabled = authors.Enabled = !busy;
         postUrl.Enabled = downloadPost.Enabled = !busy;
-        filter.Enabled = !busy; stop.Enabled = busy;
+        filter.Enabled = !busy; authorFilter.Enabled = !busy && authorFilter.Items.Count > 0; stop.Enabled = busy;
         previousPage.Enabled = !busy && currentPage > 0;
         nextPage.Enabled = !busy && (currentPage + 1) * PageSize < visiblePostCount;
+        if (expandedAuthors is not null) expandedAuthors.Enabled = !busy;
+        if (!busy) { skipPost.Enabled = false; SetDownloadingCreator(null); authors.Invalidate(); }
         if (busy) progress.Style = ProgressBarStyle.Marquee;
     }
     void ResetTransfers(string caption)
@@ -300,19 +289,27 @@ public partial class MainForm : Form
         if (!settings.RecheckDownloaded && history.State(settings.Root, post, settings.DownloadPreviews) == "Скачан") { ResetTransfers("Этот пост уже скачан"); progress.Value = 100; status.Text = "Все файлы этого поста уже сохранены."; return; }
         ResetTransfers("Скачиваю один пост — " + post.Title);
         status.Text = "Скачиваю файлы выбранного поста…";
+        using var postCancellation = BeginCurrentPost(token);
+        var downloader = new Downloader(api, settings.Root, history, settings.DownloadPreviews);
         try
         {
-            await SaveMedia(new Downloader(api, settings.Root, history, settings.DownloadPreviews), post, 1, 1, token);
+            await WithCreatorHighlight(post, () => SaveMedia(downloader, post, 1, 1, postCancellation.Token));
+            postCancellation.Token.ThrowIfCancellationRequested();
             FinishPost(post);
             status.Text = post.State == "Скачан" ? $"Файлы сохранены. Без доступной полной версии: {post.SkippedAssets().Count}. Подробности в post.txt." : "Пост сохранён частично. Доступные архивы обработаны; подробности в post.txt папки поста.";
             if (post.Warning.Length > 0) Log(post.Url + " — " + post.Warning);
         }
+        catch (OperationCanceledException) when (postSkipRequested && !token.IsCancellationRequested)
+        { await RecordSkippedPost(downloader, post); token.ThrowIfCancellationRequested(); status.Text = "Пост пропущен. Следующий запуск скачает недостающее."; }
         catch (Exception e) when (e is not OperationCanceledException)
         { post.Error = e.Message; post.State = "Ошибка"; Log(post.Url + " — " + e.Message); throw; }
+        finally { EndCurrentPost(postCancellation); }
     }
     void AuthorStatus(string key, string message)
     {
-        foreach (DataGridViewRow r in authors.Rows) if (r.Tag is Creator c && c.Key == key) r.Cells["State"].Value = message;
+        creatorPostCounts[key] = posts.Count(p => p.Creator.Key == key);
+        foreach (var grid in new[] { authors, expandedAuthors }.OfType<DataGridView>())
+            foreach (DataGridViewRow r in grid.Rows) if (r.Tag is Creator c && c.Key == key) r.Cells["State"].Value = message;
     }
     void FinishPost(Post post)
     {
@@ -323,16 +320,18 @@ public partial class MainForm : Form
     }
     async Task SaveMedia(Downloader downloader, Post post, int index, int count, CancellationToken token)
     {
-        IProgress<string> messages = new Progress<string>(text => { if (!IsDisposed) status.Text = text; });
-        IProgress<MediaProgress> updates = new Progress<MediaProgress>(p => { if (!IsDisposed) MediaUpdate(post, index, count, p); });
+        bool acceptingProgress = true;
+        IProgress<string> messages = new Progress<string>(text => { if (!IsDisposed && acceptingProgress && !token.IsCancellationRequested) status.Text = text; });
+        IProgress<MediaProgress> updates = new Progress<MediaProgress>(p => { if (!IsDisposed && acceptingProgress && !token.IsCancellationRequested) MediaUpdate(post, index, count, p); });
         var lastSent = new long[2];
-        await Task.Run(() => downloader.SavePost(post, text => messages.Report(text), p =>
+        try { await Task.Run(() => downloader.SavePost(post, text => messages.Report(text), p =>
         {
             var now = Environment.TickCount64;
             if (p.Stage == "Скачивание" && now - Volatile.Read(ref lastSent[p.Slot]) < 120) return;
             Interlocked.Exchange(ref lastSent[p.Slot], now);
             updates.Report(p);
-        }, token), token);
+        }, token), token); }
+        finally { acceptingProgress = false; }
     }
     async Task ScanPosts(CancellationToken token, bool full)
     {
@@ -373,41 +372,76 @@ public partial class MainForm : Form
             status.Text = "Сначала проверьте всех отмеченных авторов: " + string.Join(", ", unscanned.Select(c => c.Name)); return;
         }
         await RefreshStates();
-        var pending = posts.Where(p => selected.Contains(p.Creator.Key) && (settings.RecheckDownloaded || p.State != "Скачан")).ToList();
+        var pending = OrderedPosts(posts.Where(p => selected.Contains(p.Creator.Key) && (settings.RecheckDownloaded || p.State != "Скачан"))).ToList();
         if (pending.Count == 0) { status.Text = "Все найденные посты уже скачаны. Для поиска новых нажмите «Обновить новые»."; return; }
         var downloader = new Downloader(api, settings.Root, history, settings.DownloadPreviews);
-        int done = 0, failed = 0, partial = 0;
-        for (var i = 0; i < pending.Count; i++)
+        int done = 0, failed = 0, partial = 0, skipped = 0;
+        try
         {
-            token.ThrowIfCancellationRequested();
-            var post = pending[i];
-            try
+            for (var i = 0; i < pending.Count; i++)
             {
-                if (settings.RecheckDownloaded || post.Incomplete || post.Error.Length > 0)
+                token.ThrowIfCancellationRequested();
+                var post = pending[i];
+                using var postCancellation = BeginCurrentPost(token);
+                SetDownloadingCreator(post.Creator.Key);
+                try
                 {
-                    status.Text = $"Получаю актуальные данные поста {i + 1}/{pending.Count}: {post.Title}";
-                    var detail = await api.Detail(post, token);
-                    posts[posts.IndexOf(post)] = detail; post = detail;
-                    await Catalog.SavePost(settings.Root, post);
+                    if (settings.RecheckDownloaded || post.Incomplete || post.Error.Length > 0)
+                    {
+                        status.Text = $"Получаю актуальные данные поста {i + 1}/{pending.Count}: {post.Title}";
+                        var detail = await api.Detail(post, postCancellation.Token);
+                        posts[posts.IndexOf(post)] = detail; post = detail;
+                        await Catalog.SavePost(settings.Root, post);
+                    }
+                    post.State = "Скачивается…"; RefreshRow(post);
+                    ResetTransfers($"Пост {i + 1}/{pending.Count}: {post.Creator.Name} — {post.Title}");
+                    status.Text = $"Пост {i + 1}/{pending.Count}: {post.Creator.Name} — {post.Title}";
+                    await SaveMedia(downloader, post, i + 1, pending.Count, postCancellation.Token);
+                    postCancellation.Token.ThrowIfCancellationRequested();
+                    FinishPost(post);
+                    if (post.State == "Скачан") done++; else { partial++; Log(post.Url + " — " + post.Warning); }
                 }
-                post.State = "Скачивается…"; RefreshRow(post);
-                ResetTransfers($"Пост {i + 1}/{pending.Count}: {post.Creator.Name} — {post.Title}");
-                status.Text = $"Пост {i + 1}/{pending.Count}: {post.Creator.Name} — {post.Title}";
-                await SaveMedia(downloader, post, i + 1, pending.Count, token);
-                FinishPost(post);
-                if (post.State == "Скачан") done++; else { partial++; Log(post.Url + " — " + post.Warning); }
+                catch (OperationCanceledException) when (postSkipRequested && !token.IsCancellationRequested)
+                { await RecordSkippedPost(downloader, post); token.ThrowIfCancellationRequested(); skipped++; }
+                catch (Exception e) when (e is not OperationCanceledException)
+                { post.Error = e.Message; post.State = "Ошибка"; failed++; Log(post.Url + " — " + e.Message); }
+                finally { EndCurrentPost(postCancellation); }
+                RefreshRow(post); UpdateSummary();
             }
-            catch (Exception e) when (e is not OperationCanceledException)
-            { post.Error = e.Message; post.State = "Ошибка"; failed++; Log(post.Url + " — " + e.Message); }
-            RefreshRow(post); UpdateSummary();
         }
-        status.Text = $"Готово: полностью {done}, частично {partial}, ошибок постов {failed}." + (failed + partial > 0 ? " Повторное нажатие загрузит недостающее." : "");
+        finally { SetDownloadingCreator(null); }
+        status.Text = $"Готово: полностью {done}, частично {partial}, ошибок постов {failed}." + (failed + partial > 0 ? " Повторное нажатие загрузит недостающее." : "") + (skipped > 0 ? $" Пропущено постов: {skipped}. Следующий запуск попробует скачать их снова." : "");
+        if (skipped > 0) status.Text = $"Готово: полностью {done}, частично {partial}, ошибок постов {failed}, пропущено {skipped}. Следующий запуск попробует скачать пропущенные посты снова.";
+    }
+    IEnumerable<Post> WorkspacePosts()
+    {
+        var creators = settings.Creators.ToDictionary(c => c.Key, c => c.Selected);
+        // Standalone posts stay visible until their creator is added to the selectable list.
+        return posts.Where(p => creators.TryGetValue(p.Creator.Key, out var selected) ? selected : directPosts.Contains(p.Key));
+    }
+    void UpdateAuthorFilter()
+    {
+        var key = authorFilter.Items.Count > 1 ? (authorFilter.SelectedItem as AuthorFilterItem)?.Key : null;
+        var selected = Selected();
+        updatingAuthorFilter = true;
+        authorFilter.BeginUpdate();
+        try
+        {
+            authorFilter.Items.Clear();
+            if (selected.Count > 1) authorFilter.Items.Add(new AuthorFilterItem(null, Locale.T("Все выбранные авторы")));
+            foreach (var creator in selected) authorFilter.Items.Add(new AuthorFilterItem(creator.Key, creator.Name));
+            var index = authorFilter.Items.Cast<AuthorFilterItem>().ToList().FindIndex(item => item.Key == key);
+            authorFilter.SelectedIndex = index >= 0 ? index : authorFilter.Items.Count > 0 ? 0 : -1;
+            authorFilter.Enabled = operation is null && selected.Count > 0;
+        }
+        finally { authorFilter.EndUpdate(); updatingAuthorFilter = false; }
     }
     void FillPosts()
     {
+        UpdateAuthorFilter();
+        var authorKey = (authorFilter.SelectedItem as AuthorFilterItem)?.Key;
         table.SuspendLayout(); table.Rows.Clear(); postRows.Clear();
-        var view = posts.Where(post => !(filter.SelectedIndex == 1 && post.State == "Скачан" || filter.SelectedIndex == 2 && post.State != "Скачан" || filter.SelectedIndex == 3 && !post.State.Contains("Ошибка") && post.State != "Неполный пост" && post.Warning.Length == 0))
-            .OrderByDescending(p => p.Published, StringComparer.Ordinal).ToList();
+        var view = OrderedPosts(WorkspacePosts().Where(post => authorKey is null || post.Creator.Key == authorKey).Where(post => !(filter.SelectedIndex == 1 && post.State == "Скачан" || filter.SelectedIndex == 2 && post.State != "Скачан" || filter.SelectedIndex == 3 && !post.State.Contains("Ошибка") && post.State != "Неполный пост" && post.Warning.Length == 0))).ToList();
         visiblePostCount = view.Count;
         currentPage = Math.Clamp(currentPage, 0, Math.Max(0, (view.Count - 1) / PageSize));
         previousPage.Enabled = operation is null && currentPage > 0;
@@ -446,7 +480,7 @@ public partial class MainForm : Form
     void UpdateSummary()
     {
         var selected = Selected().Select(c => c.Key).ToHashSet();
-        var current = posts.Where(p => selected.Contains(p.Creator.Key) || directPosts.Contains(p.Key)).ToList();
+        var current = WorkspacePosts().ToList();
         var done = current.Count(p => p.State == "Скачан");
         summary.Text = $"Выбрано авторов: {selected.Count}   •   Найдено постов: {current.Count}   •   Скачано: {done}   •   Осталось: {current.Count - done}";
         libraryCaption.Text = $"{current.Count:N0} постов · Скачано {done:N0}";

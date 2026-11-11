@@ -18,12 +18,12 @@ public partial class MainForm
     readonly string[] mediaNames = ["", ""];
     void BuildWorkspace()
     {
-        Text = "Pawchive Downloader 1.8";
+        Text = "Pawchive Downloader 1.9.2";
         Icon = BrandAssets.Icon;
         Font = new("Segoe UI", 10);
         AutoScaleDimensions = new(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
-        MinimumSize = new(1080, 740); Size = new(1320, 900);
+        MinimumSize = new(1180, 780); Size = new(1420, 940);
         StartPosition = FormStartPosition.CenterScreen;
         var shell = Compose(1, 4); shell.RowStyles.Add(new(SizeType.Absolute, 72)); shell.RowStyles.Add(new(SizeType.Percent, 100));
         shell.RowStyles.Add(new(SizeType.Absolute, 178)); shell.RowStyles.Add(new(SizeType.Absolute, 64)); Controls.Add(shell);
@@ -35,20 +35,14 @@ public partial class MainForm
         var headerActions = Compose(2, 1); headerActions.ColumnStyles.Add(new(SizeType.Percent, 100)); headerActions.ColumnStyles.Add(new(SizeType.Absolute, 138));
         ButtonStyle(open, "Downloads", AppIcon.Folder, 210, quiet: true); ButtonStyle(appearance, "Настройки", AppIcon.Settings, 130, quiet: true);
         open.Dock = appearance.Dock = DockStyle.Fill; headerActions.Controls.Add(open, 0, 0); headerActions.Controls.Add(appearance, 1, 0); header.Controls.Add(headerActions, 1, 0); shell.Controls.Add(header, 0, 0);
-        var body = Compose(2, 1); body.ColumnStyles.Add(new(SizeType.Absolute, 240)); body.ColumnStyles.Add(new(SizeType.Percent, 100)); shell.Controls.Add(body, 0, 1);
+        var body = Compose(2, 1); body.ColumnStyles.Add(new(SizeType.Absolute, 370)); body.ColumnStyles.Add(new(SizeType.Percent, 100)); shell.Controls.Add(body, 0, 1);
         var sidebar = Compose(1, 4); sidebar.Padding = new(14, 16, 14, 14); sidebar.RowStyles.Add(new(SizeType.Absolute, 48)); sidebar.RowStyles.Add(new(SizeType.Percent, 100)); sidebar.RowStyles.Add(new(SizeType.Absolute, 50)); sidebar.RowStyles.Add(new(SizeType.Absolute, 94));
-        var authorHeading = Compose(2, 1); authorHeading.ColumnStyles.Add(new(SizeType.Percent, 100)); authorHeading.ColumnStyles.Add(new(SizeType.Absolute, 40));
+        var authorHeading = Compose(3, 1); authorHeading.ColumnStyles.Add(new(SizeType.Percent, 100)); authorHeading.ColumnStyles.Add(new(SizeType.Absolute, 44)); authorHeading.ColumnStyles.Add(new(SizeType.Absolute, 40));
         authorHeading.Controls.Add(new Label { Text = "Авторы", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new("Segoe UI Semibold", 11) }, 0, 0);
-        ButtonStyle(add, "", AppIcon.Plus, 38, quiet: true); add.AccessibleName = "Добавить автора"; tips.SetToolTip(add, "Добавить автора по ссылке"); authorHeading.Controls.Add(add, 1, 0); sidebar.Controls.Add(authorHeading, 0, 0);
+        ButtonStyle(add, "", AppIcon.Plus, 38, quiet: true); add.AccessibleName = "Добавить автора"; tips.SetToolTip(add, "Добавить автора по ссылке"); authorHeading.Controls.Add(add, 2, 0);
+        ButtonStyle(expandAuthors, "↗", AppIcon.None, 38, quiet: true); expandAuthors.Margin = Padding.Empty; tips.SetToolTip(expandAuthors, "Расширить список авторов"); expandAuthors.Click += (_, _) => ShowAuthorManager(); authorHeading.Controls.Add(expandAuthors, 1, 0); sidebar.Controls.Add(authorHeading, 0, 0);
         add.Margin = Padding.Empty;
-        authors.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Selected", HeaderText = "Выбрать", Width = 32, Resizable = DataGridViewTriState.False });
-        authors.EditMode = DataGridViewEditMode.EditOnEnter;
-        authors.Columns.Add(new FastTextColumn { Name = "Author", HeaderText = "Автор", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, ReadOnly = true });
-        authors.Columns.Add(new FastTextColumn { Name = "Service", HeaderText = "Платформа", Visible = false });
-        authors.Columns.Add(new FastTextColumn { Name = "Id", HeaderText = "ID", Visible = false });
-        authors.Columns.Add(new FastTextColumn { Name = "State", HeaderText = "Сохранённый список", Visible = false });
-        authors.ColumnHeadersVisible = false; authors.RowTemplate.Height = 74; authors.ScrollBars = ScrollBars.Vertical;
-        authors.CellPainting += PaintAuthor; authors.CellValueChanged += (_, _) => authors.Invalidate(); authors.AccessibleName = "Авторы для проверки и скачивания";
+        ConfigureCreatorGrid(authors, false);
         sidebar.Controls.Add(new GridHost(authors) { Dock = DockStyle.Fill }, 0, 1);
         sidebar.Controls.Add(new Label { Text = "Отметьте авторов для проверки\nи скачивания", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9), Padding = new(4, 10, 0, 0) }, 0, 2);
         var sidebarActions = Compose(1, 2); sidebarActions.RowStyles.Add(new(SizeType.Percent, 50)); sidebarActions.RowStyles.Add(new(SizeType.Percent, 50));
@@ -64,11 +58,12 @@ public partial class MainForm
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new(0, 2, 0, 0) };
         ButtonStyle(scan, "Обновить новые", AppIcon.Refresh, 174); ButtonStyle(download, "Скачать недостающее", AppIcon.Download, 236, primary: true); ButtonStyle(fullScan, "Полная проверка", AppIcon.Scan, 176, quiet: true);
         tips.SetToolTip(fullScan, "Проверить все посты выбранных авторов заново"); actions.Controls.AddRange([scan, download, fullScan]); main.Controls.Add(actions, 0, 1);
-        var filters = Compose(4, 1); filters.Padding = new(0, 5, 0, 7); filters.ColumnStyles.Add(new(SizeType.Absolute, 205)); filters.ColumnStyles.Add(new(SizeType.Percent, 100)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42));
+        var filters = Compose(5, 1); filters.Padding = new(0, 5, 0, 7); filters.ColumnStyles.Add(new(SizeType.Absolute, 205)); filters.ColumnStyles.Add(new(SizeType.Absolute, 230)); filters.ColumnStyles.Add(new(SizeType.Percent, 100)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42));
         filter.Items.AddRange(["Все посты", "Требуют скачивания", "Скачанные", "Ошибки"]); filter.SelectedIndex = 0; filter.Dock = DockStyle.Top; filter.Margin = new(0, 3, 10, 0);
+        authorFilter.Dock = DockStyle.Top; authorFilter.Margin = new(0, 3, 10, 0);
         pageLabel.Dock = DockStyle.Fill; pageLabel.AutoSize = false; pageLabel.TextAlign = ContentAlignment.MiddleRight; pageLabel.Padding = new(0, 0, 12, 0); pageLabel.Tag = "muted";
         ButtonStyle(previousPage, "", AppIcon.Left, 36, quiet: true); previousPage.AccessibleName = "Предыдущая страница"; ButtonStyle(nextPage, "", AppIcon.Right, 36, quiet: true); nextPage.AccessibleName = "Следующая страница";
-        filters.Controls.Add(filter, 0, 0); filters.Controls.Add(pageLabel, 1, 0); filters.Controls.Add(previousPage, 2, 0); filters.Controls.Add(nextPage, 3, 0); main.Controls.Add(filters, 0, 2);
+        filters.Controls.Add(filter, 0, 0); filters.Controls.Add(authorFilter, 1, 0); filters.Controls.Add(pageLabel, 2, 0); filters.Controls.Add(previousPage, 3, 0); filters.Controls.Add(nextPage, 4, 0); main.Controls.Add(filters, 0, 2);
         table.ReadOnly = true; table.AccessibleName = "Посты"; table.RowTemplate.Height = 38;
         table.Columns.Add(new FastTextColumn { Name = "Author", HeaderText = "Автор", Width = 112 }); table.Columns.Add(new FastTextColumn { Name = "Date", HeaderText = "Дата", Width = 112 });
         table.Columns.Add(new FastTextColumn { Name = "Title", HeaderText = "Пост", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 130 });
@@ -77,8 +72,8 @@ public partial class MainForm
         var tableFrame = new GridHost(table) { Dock = DockStyle.Fill, Padding = new(1), Outline = true, Margin = Padding.Empty }; Surface(tableFrame); main.Controls.Add(tableFrame, 0, 3);
         main.Controls.Add(new Label { Text = "Двойной щелчок — открыть пост на сайте", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9), TextAlign = ContentAlignment.MiddleLeft }, 0, 4); body.Controls.Add(main, 1, 0);
         var transfers = Compose(1, 4); transfers.Padding = new(22, 10, 22, 14); transfers.RowStyles.Add(new(SizeType.Absolute, 42)); transfers.RowStyles.Add(new(SizeType.Absolute, 28)); transfers.RowStyles.Add(new(SizeType.Percent, 100)); transfers.RowStyles.Add(new(SizeType.Absolute, 7)); Surface(transfers);
-        var transferTitle = Compose(2, 1); transferTitle.ColumnStyles.Add(new(SizeType.Percent, 100)); transferTitle.ColumnStyles.Add(new(SizeType.Absolute, 155));
-        transferTitle.Controls.Add(new Label { Text = "Текущие загрузки", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new("Segoe UI Semibold", 11) }, 0, 0); ButtonStyle(stop, "Остановить", AppIcon.Stop, 150); transferTitle.Controls.Add(stop, 1, 0); transfers.Controls.Add(transferTitle, 0, 0);
+        var transferTitle = Compose(3, 1); transferTitle.ColumnStyles.Add(new(SizeType.Percent, 100)); transferTitle.ColumnStyles.Add(new(SizeType.Absolute, 190)); transferTitle.ColumnStyles.Add(new(SizeType.Absolute, 155));
+        transferTitle.Controls.Add(new Label { Text = "Текущие загрузки", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new("Segoe UI Semibold", 11) }, 0, 0); ButtonStyle(stop, "Остановить", AppIcon.Stop, 150); ButtonStyle(skipPost, "Пропустить пост", AppIcon.Right, 182); transferTitle.Controls.Add(skipPost, 1, 0); transferTitle.Controls.Add(stop, 2, 0); transfers.Controls.Add(transferTitle, 0, 0);
         transferSummary.Tag = "muted"; transfers.Controls.Add(transferSummary, 0, 1);
         var files = Compose(2, 1); files.ColumnStyles.Add(new(SizeType.Percent, 50)); files.ColumnStyles.Add(new(SizeType.Percent, 50));
         for (int i = 0; i < 2; i++)
@@ -149,7 +144,7 @@ public partial class MainForm
         if (control is SurfacePanel panel) { panel.LineColor = palette.Border; panel.Invalidate(); }
         if (control is DataGridView grid)
         {
-            bool side = grid == authors; grid.BackgroundColor = side ? palette.Background : palette.Surface; grid.GridColor = palette.Border;
+            bool side = grid == authors || grid == expandedAuthors; grid.BackgroundColor = side ? palette.Background : palette.Surface; grid.GridColor = palette.Border;
             grid.CellBorderStyle = side ? DataGridViewCellBorderStyle.None : DataGridViewCellBorderStyle.SingleHorizontal;
             grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None; grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing; grid.ColumnHeadersHeight = (int)(38 * DeviceDpi / 96f);
             grid.DefaultCellStyle.BackColor = side ? palette.Background : palette.Surface; grid.DefaultCellStyle.ForeColor = palette.Text;
@@ -164,37 +159,6 @@ public partial class MainForm
             grid.RowHeadersDefaultCellStyle.BackColor = palette.Surface;
         }
         foreach (Control child in control.Controls) ThemeTree(child);
-    }
-    void PaintAuthor(object? sender, DataGridViewCellPaintingEventArgs e)
-    {
-        if (e.RowIndex < 0 || e.ColumnIndex > 1) return;
-        bool selected = (e.State & DataGridViewElementStates.Selected) != 0;
-        var bg = selected ? palette.Selection : palette.Background; var rect = e.CellBounds; float scale = authors.DeviceDpi / 96f;
-        using var fill = new SolidBrush(bg); e.Graphics!.FillRectangle(fill, rect);
-        var row = authors.Rows[e.RowIndex];
-        if (e.ColumnIndex == 0)
-        {
-            var box = new Rectangle(rect.X + (int)(8 * scale), rect.Y + (rect.Height - (int)(15 * scale)) / 2, (int)(15 * scale), (int)(15 * scale)); bool check = Convert.ToBoolean(e.Value);
-            using var brush = new SolidBrush(check ? palette.Accent : palette.Surface); using var border = new Pen(check ? palette.Accent : palette.Muted);
-            using var path = IconDrawing.Rounded(box, (int)(3 * scale)); e.Graphics.FillPath(brush, path); e.Graphics.DrawPath(border, path);
-            if (check) { using var pen = new Pen(palette.AccentText, 1.8f * scale); e.Graphics.DrawLines(pen, [new PointF(box.X + 3 * scale, box.Y + 7 * scale), new(box.X + 6 * scale, box.Y + 10 * scale), new(box.X + 12 * scale, box.Y + 4 * scale)]); }
-        }
-        else
-        {
-            int titleHeight = (int)(22 * scale), detailHeight = (int)(19 * scale), stateHeight = (int)(18 * scale);
-            int top = rect.Y + Math.Max(0, (rect.Height - titleHeight - detailHeight - stateHeight) / 2);
-            var title = new Rectangle(rect.X + 3, top, rect.Width - 9, titleHeight);
-            var detail = new Rectangle(title.X, title.Bottom, title.Width, detailHeight);
-            var state = new Rectangle(title.X, detail.Bottom, title.Width, stateHeight);
-            using var titleFont = new Font("Segoe UI Semibold", Font.Size); using var small = new Font(Font.FontFamily, 8.5f);
-            TextRenderer.DrawText(e.Graphics, Convert.ToString(e.Value), titleFont, title, selected ? AppPalette.Readable(palette.Text, bg) : palette.Text, TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-            string platform = Convert.ToString(row.Cells["Service"].Value) ?? "";
-            TextRenderer.DrawText(e.Graphics, platform + " · " + row.Cells["Id"].Value, small, detail, AppPalette.Readable(palette.Muted, bg), TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-            string saved = Convert.ToString(row.Cells["State"].Value) ?? "";
-            if (row.Tag is Creator creator && catalogDates.ContainsKey(creator.Key) && !saved.Contains("постов") && !saved.Contains("ровер")) saved = posts.Count(p => p.Creator.Key == creator.Key).ToString("N0") + " постов · " + saved;
-            TextRenderer.DrawText(e.Graphics, saved.StartsWith("Ошибка: ", StringComparison.Ordinal) ? Locale.Error(saved) : Locale.T(saved), small, state, AppPalette.Readable(palette.Muted, bg), TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
-        }
-        e.Handled = true;
     }
     Form Dialog(string title, Size size)
     {
@@ -289,6 +253,7 @@ public partial class MainForm
             Locale.Language = settings.Language;
             UiLanguage.Refresh(this);
             tips.SetToolTip(add, Locale.T("Добавить автора по ссылке"));
+            tips.SetToolTip(expandAuthors, Locale.T("Расширить список авторов"));
             tips.SetToolTip(fullScan, Locale.T("Проверить все посты выбранных авторов заново"));
             for (int i = 0; i < mediaLabels.Length; i++) mediaLabels[i].Text = mediaNames[i].Length == 0 ? Locale.T($"Файл {i + 1}") : mediaNames[i].StartsWith("Превью: ", StringComparison.Ordinal) ? Locale.T(mediaNames[i]) : mediaNames[i];
             var selectedPost = (table.CurrentRow?.Tag as Post)?.Key;

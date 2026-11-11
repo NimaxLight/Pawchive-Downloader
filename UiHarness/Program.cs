@@ -41,14 +41,13 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
-        var path = Path.Combine(AppContext.BaseDirectory, "ui-settings-1.8.json");
-        var root = Path.Combine(AppContext.BaseDirectory, "Downloads-1.8");
-        var creators = new List<Creator> { new("patreon", "262481", "personalami"), new("patreon", "305523", "TwistedScarlett60", false), new("fanbox", "37736420", "Anna Anon", false) };
-        creators.AddRange(Enumerable.Range(1, 12).Select(i => new Creator("patreon", (90000 + i).ToString(), "Тестовый автор " + i, false)));
+        var path = Path.Combine(AppContext.BaseDirectory, "ui-settings-1.9.json");
+        var root = Path.Combine(AppContext.BaseDirectory, "Downloads-1.9");
+        var creators = new List<Creator> { new("patreon", "demo-a", "Автор А"), new("fanbox", "demo-b", "Автор Б"), new("patreon", "demo-c", "Автор В"), new("fanbox", "demo-d", "Автор Г", false), new("patreon", "demo-e", "Автор Д", false) };
         foreach (var creator in creators)
         {
             var catalog = new Catalog { Creator = creator, Complete = true, CheckedAt = DateTimeOffset.Now.ToString("O") };
-            for (int i = 0; i < (creator.Id == "262481" ? 225 : 4); i++)
+            for (int i = 0; i < (creator.Id == "demo-a" ? 225 : 4); i++)
             {
                 string[] titles = ["Day 28. Mermaid", "Day 27. Lich", "Day 26. Swamp Witch", "Day 25. Celestial Being", "Day 24. Rune Master", "Day 23. Phoenix Keeper", "Day 22. Arcane Scholar", "Day 21. Shadow Priest", "Day 20. Dragonborn"];
                 catalog.Posts.Add(JsonSerializer.SerializeToElement(new { id = (1000 + i).ToString(), title = titles[i % titles.Length], published = DateTime.Now.AddDays(-i).ToString("s"), has_full = true, detail_fetched = true,

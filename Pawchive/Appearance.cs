@@ -314,6 +314,7 @@ public class SurfacePanel : Panel
 
 public class WorkspaceGrid : DataGridView
 {
+    public WorkspaceGrid() { DoubleBuffered = true; }
     public Action<int>? WheelScroll;
     protected override void OnMouseWheel(MouseEventArgs e)
     {

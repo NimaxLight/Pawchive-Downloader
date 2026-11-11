@@ -30,11 +30,7 @@ public class Settings
     public bool DownloadPreviews { get; set; }
     public bool RecheckDownloaded { get; set; }
     public string Root { get; set; } = Path.Combine(AppContext.BaseDirectory, "Downloads");
-    public List<Creator> Creators { get; set; } = [
-        new("patreon", "305523", "TwistedScarlett60"),
-        new("patreon", "157389482", "KURU"),
-        new("patreon", "47176825", "CanaryPrimary"),
-        new("fanbox", "37736420", "Anna Anon")];
+    public List<Creator> Creators { get; set; } = [];
 }
 
 public static class Storage
@@ -313,6 +309,7 @@ public class PostEntry
 public record FileFailure(string Name, string Url, string Message, int? StatusCode);
 public class History
 {
+    public const string SkippedMessage = "Пост пропущен пользователем. Следующий запуск попробует скачать его снова.";
     [System.Text.Json.Serialization.JsonIgnore]
     public object SyncRoot { get; } = new();
     public int Version { get; set; } = 1;
@@ -340,6 +337,7 @@ public class History
         if (!string.IsNullOrEmpty(post.Error)) return "Ошибка";
         if (post.Incomplete) return "Неполный пост";
         if (!Posts.TryGetValue(post.Key, out var entry)) return "Не скачан";
+        if (!entry.Complete && entry.Error == SkippedMessage) return "Пропущен / повторить";
         if (entry.FileErrors.Count > 0) return "Частично скачан";
         if (!entry.Complete && entry.Files.Values.Any(f => f.ExtractionError.Length > 0)) return "Нужна распаковка";
         if (entry.Error.Length > 0) return "Ошибка / повторить";
@@ -716,6 +714,13 @@ public class Downloader(Api api, string root, History history, bool includePrevi
             try { WriteReports(post, entry); } catch (IOException) { }
             throw;
         }
+    }
+    public void MarkSkipped(Post post)
+    {
+        if (!history.Posts.TryGetValue(post.Key, out var entry)) return;
+        entry.Complete = false;
+        entry.Error = History.SkippedMessage;
+        history.Save(root); WriteReports(post, entry);
     }
     void WriteReports(Post post, PostEntry entry)
     {

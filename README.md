@@ -4,9 +4,22 @@ Windows desktop downloader for [Pawchive](https://pawchive.pw/) with download hi
 
 Pawchive Downloader helps you keep a local library of posts from selected creators. Add creator URLs, check their posts, and download the available files when you choose. The saved catalog and download history make later runs faster and let you pick up missing files without downloading completed ones again.
 
-**Current version: 1.8 · Windows x64 · English and Russian interface**
+**Current version: 1.9.2 · Windows x64 · English and Russian interface**
 
 This is an independent desktop application and is not affiliated with Pawchive or the platforms whose posts appear there.
+
+User guides: [English](docs/README.en.txt) · [Русский](docs/README.ru.txt).
+
+## New in 1.9.2
+
+- Active and inactive creator groups, with an empty creator list on first launch.
+- Saved download order, editable with arrows, Alt+Up/Down, or drag handles.
+- An embedded creator manager with a dimmed backdrop and synchronized controls.
+- Post groups that immediately follow the active creator order.
+- Independent status and creator view filters; downloads still process all active creators.
+- An accent highlight for the creator whose posts are currently downloading.
+- **Skip post** cancels only the current post and continues the queue. The next run retries it, keeping completed files.
+- Checkbox hit areas, card spacing, arrow alignment, and drag rendering fixes.
 
 ## Features
 
@@ -79,10 +92,10 @@ Run this command from the repository root:
 dotnet publish Pawchive/Pawchive.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o publish
 ```
 
-The resulting `publish/PawchiveDownloader.exe` includes the runtime and embedded icon and translations. For redistribution, include `LICENSE` and `SharpCompress-LICENSE.txt` alongside the executable:
+The resulting `publish/PawchiveDownloader.exe` includes the runtime and embedded icon and translations. For redistribution, include both license notices and the English and Russian user guides alongside the executable:
 
 ```powershell
-Copy-Item LICENSE, SharpCompress-LICENSE.txt -Destination publish
+Copy-Item LICENSE, SharpCompress-LICENSE.txt, docs/README.en.txt, docs/README.ru.txt -Destination publish
 ```
 
 Use a writable location such as a folder under your user profile. The app stores settings beside its executable, so a protected installation directory can prevent settings from being saved.
@@ -90,7 +103,7 @@ Use a writable location such as a folder under your user profile. The app stores
 ## Getting started
 
 1. Open **Settings** and choose your downloads/history folder. If needed, change **Interface language** to English, choose a theme and accent color, then save. The default language is Russian.
-2. Use the **+** button in the creators panel to add a Pawchive creator URL, for example `https://pawchive.pw/patreon/user/12345`. The app includes a small initial creator list; you can remove or replace those entries.
+2. Use the **+** button in the creators panel to add a Pawchive creator URL, for example `https://pawchive.pw/patreon/user/12345`. The creator list is empty on a clean first launch.
 3. Select the creators to process and click **Check for new posts**. The first check builds their catalogs; later checks reuse the saved information.
 4. Click **Download missing** to save the available files from known posts for the selected creators.
 5. On later visits, click **Check for new posts**, then **Download missing** again.
@@ -105,7 +118,18 @@ Enable **Download image previews** in Settings if you also want preview images. 
 
 Enable **Recheck downloaded posts** to revisit posts already shown as downloaded. The download action becomes **Recheck and download**: it refreshes post details, downloads newly available files, and keeps files already recorded as complete and present on disk. This is a manual action and does not create a background task.
 
-### Stopping and retrying
+### Download order and view filters
+
+Check a creator to add them to the end of the active queue. Unchecking moves them to the inactive group and hides their posts while keeping downloaded files and history. Reorder active creators using the arrows, Alt+Up/Down, or the dotted drag handle. The order is saved immediately and is shared by the post table and downloader. Newer posts come first within each creator. Queue editing is unavailable during operations.
+
+The expand button beside **+** opens a centered creator manager inside the application, with a dimmed backdrop. It includes both groups and applies changes immediately. Close it with **Done**, its close button, Escape, or a click outside the panel.
+
+The creator filter offers the active creators and, when several are active, an option to view them all. It changes only the table; downloading always processes all active creators.
+
+### Skipping, stopping and retrying
+
+Click **Skip post** to cancel only the current post and continue with the next. Both in-progress media transfers stop before the queue advances, and their incomplete temporary files are removed. Completed files remain recorded. The skipped post is shown as **Skipped / retry**, stays incomplete, and is retried on the next download run. This is not a permanent exclusion. In a single-post download, skipping ends that operation.
+
 
 Click **Stop** and allow the current operation to stop. Completed files remain on disk and in the history. Incomplete temporary downloads are removed, so a later attempt restarts those files rather than resuming their byte ranges.
 
@@ -178,7 +202,7 @@ Preview the interface using sample data:
 dotnet run --project UiHarness/UiHarness.csproj -c Release
 ```
 
-The UI harness writes its own `ui-settings-1.8.json` and `Downloads-1.8` library next to its executable. It does not use the production application's settings or library. Some backend test entry points also support explicitly requested live probes; those are not part of the default offline test run.
+The UI harness writes its own `ui-settings-1.9.json` and `Downloads-1.9` library next to its executable. It does not use the production application's settings or library. Some backend test entry points also support explicitly requested live probes; those are not part of the default offline test run.
 
 ## Source layout
 
@@ -187,7 +211,9 @@ The UI harness writes its own `ui-settings-1.8.json` and `Downloads-1.8` library
 | `Pawchive/Pawchive.csproj` | Windows Forms application, package reference, version, and embedded resources |
 | `Pawchive/Program.cs` | Application entry point, operations, filtering, pagination, progress, and history integration |
 | `Pawchive/Workspace.cs` | Workspace layout, creator/post dialogs, settings, and language switching |
+| `Pawchive/CreatorWorkspace.cs` | Active/inactive groups, saved queue order, detailed manager, drag/drop, transfer highlight and row animation |
 | `Pawchive/Appearance.cs` | Theme colors, system accent integration, custom controls, icons, and scrollbars |
+| `Pawchive/PostSkipping.cs` | Per-post cancellation, Skip post control, and retryable skip status |
 | `Pawchive/Core.cs` | Models, API calls, media discovery, downloads, history, and post reports |
 | `Pawchive/Catalog.cs` | Persistent catalogs and incremental post discovery |
 | `Pawchive/Archives.cs` | Archive extraction, output validation, and extraction records |
