@@ -83,6 +83,26 @@ static class Program
                 Check(table.PointToScreen(Point.Empty).Y - filter.PointToScreen(new Point(0, filter.Height)).Y >= 10, "Filter has space above the table");
                 Check(form.Icon is not null && All(form).OfType<BrandView>().Any(), "Application and header use the supplied brand asset");
                 Check(table.Rows.Count == 200, "Pagination first page");
+                foreach (var language in new[] { "ru", "en" })
+                {
+                    settings.Language = language; Call(form, "ApplyUiLanguage");
+                    Check(!table.AllowUserToResizeColumns && table.Columns.Cast<DataGridViewColumn>().All(c => c.Resizable == DataGridViewTriState.False), "Every post column is protected from manual resizing in " + language);
+                    foreach (var column in table.Columns.Cast<DataGridViewColumn>())
+                    {
+                        int headerWidth = TextRenderer.MeasureText(column.HeaderText, table.ColumnHeadersDefaultCellStyle.Font!, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                        Check(column.Width >= headerWidth + 12, "Localized header fits its fixed column: " + column.Name);
+                    }
+                    Check(table.Columns["Title"]!.Width > table.Columns["Author"]!.Width, "Post title retains most of the flexible table space");
+                }
+                settings.Language = "ru"; Call(form, "ApplyUiLanguage");
+                string longName = new('A', 100), longTitle = new('T', 220);
+                var tooltipPost = new Post { Creator = creator with { Name = longName }, Raw = JsonSerializer.SerializeToElement(new { id = "tooltip", title = longTitle, published = "9999-12-31" }) };
+                posts.Add(tooltipPost); Call(form, "FillPosts");
+                Check(table.ShowCellToolTips && table.Rows[0].Cells["Author"].ToolTipText == longName && table.Rows[0].Cells["Title"].ToolTipText == longTitle, "Truncated author names and titles expose full text in tooltips");
+                var refreshedTooltip = new Post { Creator = tooltipPost.Creator, Raw = JsonSerializer.SerializeToElement(new { id = "tooltip", title = longTitle + " updated", published = "9999-12-31" }) };
+                Call(form, "RefreshRow", refreshedTooltip);
+                Check(table.Rows[0].Cells["Title"].ToolTipText == refreshedTooltip.Title, "Post title tooltip updates when a row is refreshed");
+                posts.Remove(tooltipPost); Call(form, "FillPosts");
                 Field<ModernButton>(form, "nextPage").PerformClick(); Check(table.Rows.Count == 15, "Pagination second page");
                 Field<ModernButton>(form, "previousPage").PerformClick();
                 var originalPosts = posts.ToArray();

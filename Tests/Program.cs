@@ -61,6 +61,18 @@ static class Tests
     static string Root(string name) { var path = Path.Combine(AppContext.BaseDirectory, "test-data", name + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
     static async Task Main(string[] args)
     {
+        var textFixture = args.FirstOrDefault(a => a.StartsWith("--text-post="));
+        if (textFixture is not null)
+        {
+            using var fixture = JsonDocument.Parse(File.ReadAllText(textFixture[12..]));
+            var fixturePost = new Post { Creator = creator, Raw = fixture.RootElement.Clone() };
+            Check(!fixturePost.Incomplete && fixturePost.Assets().Count == 0, "Actual API fixture is recognized as a complete text-only post");
+            var fixtureRoot = Root("text-api-fixture"); var fixtureHistory = new History();
+            using var fixtureApi = new Api(new FakeHandler { Respond = _ => throw new Exception("No HTTP request expected") }, TimeSpan.Zero);
+            await new Downloader(fixtureApi, fixtureRoot, fixtureHistory).SavePost(fixturePost, _ => { }, (_, _) => { }, CancellationToken.None);
+            Check(fixtureHistory.State(fixtureRoot, fixturePost) == "Скачан", "Actual API fixture saves successfully without requesting media");
+            return;
+        }
         if (args.Contains("--live")) { await Live(); return; }
         if (args.Contains("--catalog-live")) { await CatalogLive(); return; }
         if (args.Contains("--permanent-live")) { await PermanentLive(); return; }
@@ -125,6 +137,19 @@ static class Tests
         var linksOnly = P(new { id = "links", title = "Links only", content = "<a href='https://example.com/archive#key'>Archive</a>", file = new { }, attachments = Array.Empty<object>() });
         await downloader.SavePost(linksOnly, _ => { }, (_, _) => { }, CancellationToken.None);
         Check(history.State(root, linksOnly) == "Скачан", "links-only posts are tracked");
+        var textRaw = new { id = "text-only", title = "Text update", content = "<p>A complete text update.</p>", has_full = false, detail_fetched = true, file = new { }, attachments = Array.Empty<object>(), embed = new { }, shared_file = false, preview_state = "pending" };
+        var textOnly = P(textRaw);
+        Check(!textOnly.Incomplete && history.State(root, textOnly) == "Не скачан", "Fully fetched text-only post is not incomplete when has_full is false");
+        var textHandler = new FakeHandler { Respond = _ => throw new Exception("Text-only save must not request media or fetch details again") };
+        using var textApi = new Api(textHandler, TimeSpan.Zero);
+        await new Downloader(textApi, root, history).SavePost(textOnly, _ => { }, (_, _) => { }, CancellationToken.None);
+        Check(history.State(root, textOnly) == "Скачан" && history.Posts[textOnly.Key].ExpectedFiles == 0, "Text-only posts save reports and complete with zero media requests");
+        Check(File.ReadAllText(Path.Combine(root, history.Posts[textOnly.Key].Folder, "post.txt")).Contains("A complete text update."), "Text-only report preserves post content");
+        var textCatalog = new Catalog { Creator = creator, Complete = true, Posts = [JsonSerializer.SerializeToElement(textRaw)] }; textCatalog.Save(root);
+        Check(!Catalog.Load(root, creator).ToPosts().Single().Incomplete && History.Load(root).State(root, textOnly) == "Скачан", "Cached text-only posts remain complete after restart");
+        Check(P(new { id = "unfetched-text", content = "Summary only", has_full = false, detail_fetched = false, file = new { }, attachments = Array.Empty<object>() }).Incomplete, "Unfetched text summaries still require post details");
+        Check(P(new { id = "missing-media", content = "Text with unavailable original", has_full = false, detail_fetched = true, file = new { name = "missing.png", path = "/missing.png", preview_only = true } }).Incomplete, "Missing media with accompanying text stays incomplete");
+        Check(P(new { id = "inline-media", content = "<p>Caption</p><img src='https://img.pawchive.pw/thumbnail/data/p.png'>", has_full = false, detail_fetched = true, file = new { } }).Incomplete, "Preview-only inline media is not misclassified as a text-only post");
 
         var corruptRoot = Root("corrupt"); Directory.CreateDirectory(Path.Combine(corruptRoot, ".pawchive"));
         var corruptFile = Path.Combine(corruptRoot, ".pawchive", "history.json"); File.WriteAllText(corruptFile, "{bad");

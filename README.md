@@ -4,11 +4,17 @@ Windows desktop downloader for [Pawchive](https://pawchive.pw/) with download hi
 
 Pawchive Downloader helps you keep a local library of posts from selected creators. Add creator URLs, check their posts, and download the available files when you choose. The saved catalog and download history make later runs faster and let you pick up missing files without downloading completed ones again.
 
-**Current version: 1.9.2 · Windows x64 · English and Russian interface**
+**Current version: 1.9.3 · Windows x64 · English and Russian interface**
 
 This is an independent desktop application and is not affiliated with Pawchive or the platforms whose posts appear there.
 
 User guides: [English](docs/README.en.txt) · [Русский](docs/README.ru.txt).
+
+## Fixed in 1.9.3
+
+- Treat fully fetched text-only posts as complete even when the media availability flag is false. Posts with missing media, previews or unfetched details remain protected.
+- Lock all post columns against manual resizing and size metadata columns for both interface languages. Creator and title columns use the remaining window width, with most reserved for the title.
+- Show full creator names and post titles in hover tooltips, including after row refreshes.
 
 ## New in 1.9.2
 
@@ -210,6 +216,7 @@ The UI harness writes its own `ui-settings-1.9.json` and `Downloads-1.9` library
 | --- | --- |
 | `Pawchive/Pawchive.csproj` | Windows Forms application, package reference, version, and embedded resources |
 | `Pawchive/Program.cs` | Application entry point, operations, filtering, pagination, progress, and history integration |
+| `Pawchive/PostTableLayout.cs` | Locked post columns sized for both interface languages, with flexible space allocated to creator names and post titles |
 | `Pawchive/Workspace.cs` | Workspace layout, creator/post dialogs, settings, and language switching |
 | `Pawchive/CreatorWorkspace.cs` | Active/inactive groups, saved queue order, detailed manager, drag/drop, transfer highlight and row animation |
 | `Pawchive/Appearance.cs` | Theme colors, system accent integration, custom controls, icons, and scrollbars |

@@ -18,7 +18,7 @@ public partial class MainForm
     readonly string[] mediaNames = ["", ""];
     void BuildWorkspace()
     {
-        Text = "Pawchive Downloader 1.9.2";
+        Text = "Pawchive Downloader 1.9.3";
         Icon = BrandAssets.Icon;
         Font = new("Segoe UI", 10);
         AutoScaleDimensions = new(96, 96);
@@ -69,6 +69,7 @@ public partial class MainForm
         table.Columns.Add(new FastTextColumn { Name = "Title", HeaderText = "Пост", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 130 });
         table.Columns.Add(new FastTextColumn { Name = "Files", HeaderText = "Файлы", Width = 62 }); table.Columns.Add(new FastTextColumn { Name = "Links", HeaderText = "Ссылки", Width = 64 }); table.Columns.Add(new FastTextColumn { Name = "Skipped", HeaderText = "Пропуски", Width = 82 }); table.Columns.Add(new FastTextColumn { Name = "State", HeaderText = "Статус", Width = 165 });
         foreach (var name in new[] { "Files", "Links", "Skipped" }) table.Columns[name]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        ConfigurePostColumns();
         var tableFrame = new GridHost(table) { Dock = DockStyle.Fill, Padding = new(1), Outline = true, Margin = Padding.Empty }; Surface(tableFrame); main.Controls.Add(tableFrame, 0, 3);
         main.Controls.Add(new Label { Text = "Двойной щелчок — открыть пост на сайте", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9), TextAlign = ContentAlignment.MiddleLeft }, 0, 4); body.Controls.Add(main, 1, 0);
         var transfers = Compose(1, 4); transfers.Padding = new(22, 10, 22, 14); transfers.RowStyles.Add(new(SizeType.Absolute, 42)); transfers.RowStyles.Add(new(SizeType.Absolute, 28)); transfers.RowStyles.Add(new(SizeType.Percent, 100)); transfers.RowStyles.Add(new(SizeType.Absolute, 7)); Surface(transfers);
@@ -251,6 +252,7 @@ public partial class MainForm
         try
         {
             Locale.Language = settings.Language;
+            ConfigurePostColumns();
             UiLanguage.Refresh(this);
             tips.SetToolTip(add, Locale.T("Добавить автора по ссылке"));
             tips.SetToolTip(expandAuthors, Locale.T("Расширить список авторов"));

@@ -1,4 +1,12 @@
-Pawchive Downloader 1.9.2 — Windows x64
+Pawchive Downloader 1.9.3 — Windows x64
+
+FIXED IN 1.9.3
+Fully fetched text-only posts no longer fail because has_full is false.
+Unavailable media is still treated separately from complete text-only posts.
+Columns cannot be resized manually. Metadata columns fit both languages;
+creator and title columns share remaining space, with most reserved for titles.
+Hover over a creator name or post title to see the full text.
+
 
 Windows desktop application for saving available files from Pawchive posts.
 Interface languages: English and Russian. Downloads start only by button.

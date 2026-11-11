@@ -465,12 +465,15 @@ public partial class MainForm : Form
     {
         if (!postRows.TryGetValue(post.Key, out var row)) return;
         row.Tag = post; row.Cells["State"].Value = Locale.T(post.State);
+        row.Cells["Author"].Value = post.Creator.Name;
         row.Cells["Title"].Value = post.Title; row.Cells["Files"].Value = post.Assets(settings.DownloadPreviews).Count;
         row.Cells["Links"].Value = post.Links().Count; row.Cells["Skipped"].Value = post.SkippedAssets().Count;
         PaintRow(row, post); UpdatePostFolder();
     }
     void PaintRow(DataGridViewRow row, Post post)
     {
+        row.Cells["Author"].ToolTipText = post.Creator.Name;
+        row.Cells["Title"].ToolTipText = post.Title;
         var color = post.State == "Скачан" ? palette.Good : post.State.Contains("Ошибка") || post.State == "Частично скачан" ? palette.Error : post.State is "Не скачан" or "Неполный пост" ? palette.Muted : palette.AccentInk;
         row.Cells["State"].Style.ForeColor = color;
         row.Cells["State"].Style.SelectionForeColor = AppPalette.Readable(color, palette.Selection);

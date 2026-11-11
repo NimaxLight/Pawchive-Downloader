@@ -102,7 +102,27 @@ public class Post
     public string Published => Str(Raw, "published");
     public string Content => Str(Raw, "content");
     public string Url => Creator.Url + "/post/" + Id;
-    public bool Incomplete => IsFalse("has_full") || IsFalse("detail_fetched");
+    public bool Incomplete => IsFalse("detail_fetched") || IsFalse("has_full") && !ConfirmedTextOnly;
+    static bool HasPayload(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Null or JsonValueKind.False or JsonValueKind.Undefined => false,
+        JsonValueKind.String => !string.IsNullOrWhiteSpace(value.GetString()),
+        JsonValueKind.Object => value.EnumerateObject().Any(p => HasPayload(p.Value)),
+        JsonValueKind.Array => value.EnumerateArray().Any(HasPayload),
+        _ => true
+    };
+    bool ConfirmedTextOnly
+    {
+        get
+        {
+            // has_full describes media availability, including on fully fetched text posts.
+            if (!Raw.TryGetProperty("detail_fetched", out var fetched) || fetched.ValueKind != JsonValueKind.True || string.IsNullOrWhiteSpace(PlainText())) return false;
+            foreach (var descriptorName in new[] { "file", "attachments", "shared_file", "embed" })
+                if (Raw.TryGetProperty(descriptorName, out var value) && HasPayload(value)) return false;
+            if (Regex.IsMatch(CleanHtml(Content), @"<(img|video|audio|source|iframe|embed|object)\b", RegexOptions.IgnoreCase)) return false;
+            return Assets().Count == 0 && SkippedAssets().Count == 0;
+        }
+    }
     bool IsFalse(string key) => Raw.TryGetProperty(key, out var el) && el.ValueKind == JsonValueKind.False;
     public string Error { get; set; } = "";
     public string Warning { get; set; } = "";
