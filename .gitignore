@@ -426,3 +426,18 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Pawchive Downloader: local settings, libraries and temporary files
+settings.json
+settings.json.*
+ui-settings*.json
+ui-settings*.json.*
+Downloads/
+Downloads-*/
+.pawchive/
+test-data/
+test-library*/
+publish/
+outputs/
+*.part
+.extract-*/
