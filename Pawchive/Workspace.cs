@@ -18,7 +18,7 @@ public partial class MainForm
     readonly string[] mediaNames = ["", ""];
     void BuildWorkspace()
     {
-        Text = "Pawchive Downloader 1.9.3";
+        Text = "Pawchive Downloader 1.10";
         Icon = BrandAssets.Icon;
         Font = new("Segoe UI", 10);
         AutoScaleDimensions = new(96, 96);
@@ -34,7 +34,7 @@ public partial class MainForm
         header.Controls.Add(brand, 0, 0);
         var headerActions = Compose(2, 1); headerActions.ColumnStyles.Add(new(SizeType.Percent, 100)); headerActions.ColumnStyles.Add(new(SizeType.Absolute, 138));
         ButtonStyle(open, "Downloads", AppIcon.Folder, 210, quiet: true); ButtonStyle(appearance, "Настройки", AppIcon.Settings, 130, quiet: true);
-        open.Dock = appearance.Dock = DockStyle.Fill; headerActions.Controls.Add(open, 0, 0); headerActions.Controls.Add(appearance, 1, 0); header.Controls.Add(headerActions, 1, 0); shell.Controls.Add(header, 0, 0);
+        open.Dock = appearance.Dock = DockStyle.Fill; headerActions.Controls.Add(open, 0, 0); headerActions.Controls.Add(appearance, 1, 0); header.Controls.Add(headerActions, 1, 0); shell.Controls.Add(WithRules(header, RuleEdges.Bottom), 0, 0);
         var body = Compose(2, 1); body.ColumnStyles.Add(new(SizeType.Absolute, 370)); body.ColumnStyles.Add(new(SizeType.Percent, 100)); shell.Controls.Add(body, 0, 1);
         var sidebar = Compose(1, 4); sidebar.Padding = new(14, 16, 14, 14); sidebar.RowStyles.Add(new(SizeType.Absolute, 48)); sidebar.RowStyles.Add(new(SizeType.Percent, 100)); sidebar.RowStyles.Add(new(SizeType.Absolute, 50)); sidebar.RowStyles.Add(new(SizeType.Absolute, 94));
         var authorHeading = Compose(3, 1); authorHeading.ColumnStyles.Add(new(SizeType.Percent, 100)); authorHeading.ColumnStyles.Add(new(SizeType.Absolute, 44)); authorHeading.ColumnStyles.Add(new(SizeType.Absolute, 40));
@@ -47,8 +47,8 @@ public partial class MainForm
         sidebar.Controls.Add(new Label { Text = "Отметьте авторов для проверки\nи скачивания", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9), Padding = new(4, 10, 0, 0) }, 0, 2);
         var sidebarActions = Compose(1, 2); sidebarActions.RowStyles.Add(new(SizeType.Percent, 50)); sidebarActions.RowStyles.Add(new(SizeType.Percent, 50));
         ButtonStyle(remove, "Убрать автора", AppIcon.Trash, 205, quiet: true); ButtonStyle(showHistory, "История", AppIcon.History, 205, quiet: true);
-        remove.Dock = showHistory.Dock = DockStyle.Fill; remove.Margin = showHistory.Margin = new(0, 3, 0, 6); sidebarActions.Controls.Add(remove, 0, 0); sidebarActions.Controls.Add(showHistory, 0, 1); sidebar.Controls.Add(sidebarActions, 0, 3); body.Controls.Add(sidebar, 0, 0);
-        var main = Compose(1, 5); main.Padding = new(22, 16, 22, 8); main.RowStyles.Add(new(SizeType.Absolute, 64)); main.RowStyles.Add(new(SizeType.Absolute, 50)); main.RowStyles.Add(new(SizeType.Absolute, 58)); main.RowStyles.Add(new(SizeType.Percent, 100)); main.RowStyles.Add(new(SizeType.Absolute, 30));
+        remove.Dock = showHistory.Dock = DockStyle.Fill; remove.Margin = showHistory.Margin = new(0, 3, 0, 6); sidebarActions.Controls.Add(remove, 0, 0); sidebarActions.Controls.Add(showHistory, 0, 1); sidebar.Controls.Add(sidebarActions, 0, 3); body.Controls.Add(WithRules(sidebar, RuleEdges.Right), 0, 0);
+        var main = Compose(1, 7); main.Padding = new(22, 16, 22, 8); main.RowStyles.Add(new(SizeType.Absolute, 64)); main.RowStyles.Add(new(SizeType.Absolute, 50)); main.RowStyles.Add(new(SizeType.Absolute, 54)); main.RowStyles.Add(new(SizeType.Absolute, 104)); main.RowStyles.Add(new(SizeType.Absolute, 46)); main.RowStyles.Add(new(SizeType.Percent, 100)); main.RowStyles.Add(new(SizeType.Absolute, 46));
         var titleRow = Compose(3, 1); titleRow.ColumnStyles.Add(new(SizeType.Percent, 100)); titleRow.ColumnStyles.Add(new(SizeType.Absolute, 164)); titleRow.ColumnStyles.Add(new(SizeType.Absolute, 185));
         var title = Compose(1, 2); title.RowStyles.Add(new(SizeType.Absolute, 32)); title.RowStyles.Add(new(SizeType.Percent, 100));
         title.Controls.Add(new Label { Text = "Посты", AutoSize = true, Font = new("Segoe UI Semibold", 17), Margin = Padding.Empty }, 0, 0); title.Controls.Add(libraryCaption, 0, 1);
@@ -56,22 +56,23 @@ public partial class MainForm
         openPostFolder.Click += (_, _) => { if (SelectedPostFolder() is string folder) OpenPath(folder); };
         table.SelectionChanged += (_, _) => UpdatePostFolder();
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty, Padding = new(0, 2, 0, 0) };
-        ButtonStyle(scan, "Обновить новые", AppIcon.Refresh, 174); ButtonStyle(download, "Скачать недостающее", AppIcon.Download, 236, primary: true); ButtonStyle(fullScan, "Полная проверка", AppIcon.Scan, 176, quiet: true);
+        ButtonStyle(scan, "Обновить новые", AppIcon.Refresh, 174); ButtonStyle(download, "Скачать…", AppIcon.Download, 140, primary: true); ButtonStyle(fullScan, "Полная проверка", AppIcon.Scan, 176, quiet: true);
         tips.SetToolTip(fullScan, "Проверить все посты выбранных авторов заново"); actions.Controls.AddRange([scan, download, fullScan]); main.Controls.Add(actions, 0, 1);
         var filters = Compose(5, 1); filters.Padding = new(0, 5, 0, 7); filters.ColumnStyles.Add(new(SizeType.Absolute, 205)); filters.ColumnStyles.Add(new(SizeType.Absolute, 230)); filters.ColumnStyles.Add(new(SizeType.Percent, 100)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42)); filters.ColumnStyles.Add(new(SizeType.Absolute, 42));
-        filter.Items.AddRange(["Все посты", "Требуют скачивания", "Скачанные", "Ошибки"]); filter.SelectedIndex = 0; filter.Dock = DockStyle.Top; filter.Margin = new(0, 3, 10, 0);
+        filter.Items.AddRange(["Все посты", "Требуют скачивания", "Скачанные", "Ошибки", "Новые"]); filter.SelectedIndex = 0; filter.Dock = DockStyle.Top; filter.Margin = new(0, 3, 10, 0);
         authorFilter.Dock = DockStyle.Top; authorFilter.Margin = new(0, 3, 10, 0);
         pageLabel.Dock = DockStyle.Fill; pageLabel.AutoSize = false; pageLabel.TextAlign = ContentAlignment.MiddleRight; pageLabel.Padding = new(0, 0, 12, 0); pageLabel.Tag = "muted";
         ButtonStyle(previousPage, "", AppIcon.Left, 36, quiet: true); previousPage.AccessibleName = "Предыдущая страница"; ButtonStyle(nextPage, "", AppIcon.Right, 36, quiet: true); nextPage.AccessibleName = "Следующая страница";
         filters.Controls.Add(filter, 0, 0); filters.Controls.Add(authorFilter, 1, 0); filters.Controls.Add(pageLabel, 2, 0); filters.Controls.Add(previousPage, 3, 0); filters.Controls.Add(nextPage, 4, 0); main.Controls.Add(filters, 0, 2);
+        main.Controls.Add(BuildDateControls(), 0, 3); main.Controls.Add(BuildPickControls(), 0, 4);
         table.ReadOnly = true; table.AccessibleName = "Посты"; table.RowTemplate.Height = 38;
         table.Columns.Add(new FastTextColumn { Name = "Author", HeaderText = "Автор", Width = 112 }); table.Columns.Add(new FastTextColumn { Name = "Date", HeaderText = "Дата", Width = 112 });
         table.Columns.Add(new FastTextColumn { Name = "Title", HeaderText = "Пост", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 130 });
         table.Columns.Add(new FastTextColumn { Name = "Files", HeaderText = "Файлы", Width = 62 }); table.Columns.Add(new FastTextColumn { Name = "Links", HeaderText = "Ссылки", Width = 64 }); table.Columns.Add(new FastTextColumn { Name = "Skipped", HeaderText = "Пропуски", Width = 82 }); table.Columns.Add(new FastTextColumn { Name = "State", HeaderText = "Статус", Width = 165 });
         foreach (var name in new[] { "Files", "Links", "Skipped" }) table.Columns[name]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-        ConfigurePostColumns();
-        var tableFrame = new GridHost(table) { Dock = DockStyle.Fill, Padding = new(1), Outline = true, Margin = Padding.Empty }; Surface(tableFrame); main.Controls.Add(tableFrame, 0, 3);
-        main.Controls.Add(new Label { Text = "Двойной щелчок — открыть пост на сайте", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9), TextAlign = ContentAlignment.MiddleLeft }, 0, 4); body.Controls.Add(main, 1, 0);
+        ConfigurePostPicking(); ConfigurePostColumns();
+        var tableFrame = new GridHost(table) { Dock = DockStyle.Fill, Padding = new(1), Outline = true, Margin = Padding.Empty }; Surface(tableFrame); main.Controls.Add(tableFrame, 0, 5);
+        main.Controls.Add(BuildPostFooter(), 0, 6); body.Controls.Add(main, 1, 0);
         var transfers = Compose(1, 4); transfers.Padding = new(22, 10, 22, 14); transfers.RowStyles.Add(new(SizeType.Absolute, 42)); transfers.RowStyles.Add(new(SizeType.Absolute, 28)); transfers.RowStyles.Add(new(SizeType.Percent, 100)); transfers.RowStyles.Add(new(SizeType.Absolute, 7)); Surface(transfers);
         var transferTitle = Compose(3, 1); transferTitle.ColumnStyles.Add(new(SizeType.Percent, 100)); transferTitle.ColumnStyles.Add(new(SizeType.Absolute, 190)); transferTitle.ColumnStyles.Add(new(SizeType.Absolute, 155));
         transferTitle.Controls.Add(new Label { Text = "Текущие загрузки", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new("Segoe UI Semibold", 11) }, 0, 0); ButtonStyle(stop, "Остановить", AppIcon.Stop, 150); ButtonStyle(skipPost, "Пропустить пост", AppIcon.Right, 182); transferTitle.Controls.Add(skipPost, 1, 0); transferTitle.Controls.Add(stop, 2, 0); transfers.Controls.Add(transferTitle, 0, 0);
@@ -85,12 +86,29 @@ public partial class MainForm
             file.Controls.Add(mediaIcons[i], 0, 0); file.Controls.Add(mediaLabels[i], 1, 0); file.Controls.Add(mediaDetails[i], 1, 1); file.Controls.Add(mediaBars[i], 0, 2); file.SetColumnSpan(mediaBars[i], 2); files.Controls.Add(file, i, 0);
             mediaBars[i].AccessibleName = $"Прогресс файла {i + 1}";
         }
-        transfers.Controls.Add(files, 0, 2); progress.AccessibleName = "Прогресс файлов текущего поста"; transfers.Controls.Add(progress, 0, 3); shell.Controls.Add(transfers, 0, 2);
+        transfers.Controls.Add(files, 0, 2); progress.AccessibleName = "Прогресс файлов текущего поста"; transfers.Controls.Add(progress, 0, 3); shell.Controls.Add(WithRules(transfers, RuleEdges.Top), 0, 2);
         var footer = Compose(1, 2); footer.Padding = new(22, 5, 22, 5); footer.RowStyles.Add(new(SizeType.Absolute, 23)); footer.RowStyles.Add(new(SizeType.Percent, 100));
         summary.AutoSize = false; summary.Dock = DockStyle.Fill; summary.AutoEllipsis = true; summary.Tag = "muted"; summary.Font = new("Segoe UI", 9);
         status.AutoSize = false; status.Dock = DockStyle.Fill; status.MaximumSize = Size.Empty; status.AutoEllipsis = true; status.Font = new("Segoe UI", 9); status.Text = "Выберите авторов и нажмите «Обновить новые».";
-        footer.Controls.Add(summary, 0, 0); footer.Controls.Add(status, 0, 1); shell.Controls.Add(footer, 0, 3);
+        footer.Controls.Add(summary, 0, 0); footer.Controls.Add(status, 0, 1); shell.Controls.Add(WithRules(footer, RuleEdges.Top), 0, 3);
         appearance.Click += async (_, _) => await ShowAppearance();
+        void Density()
+        {
+            float scale = DeviceDpi / 96f; bool compact = ClientSize.Height < 820 * scale;
+            shell.RowStyles[0].Height = (compact ? 64 : 72) * scale;
+            shell.RowStyles[2].Height = (compact ? 140 : 178) * scale;
+            shell.RowStyles[3].Height = (compact ? 52 : 64) * scale;
+            transfers.RowStyles[0].Height = (compact ? 34 : 42) * scale;
+            transfers.RowStyles[1].Height = (compact ? 24 : 28) * scale;
+            transfers.Padding = new Padding((int)(22 * scale), (int)((compact ? 8 : 10) * scale), (int)(22 * scale), (int)((compact ? 8 : 14) * scale));
+            main.RowStyles[0].Height = (compact ? 52 : 64) * scale;
+            main.RowStyles[1].Height = (compact ? 44 : 50) * scale;
+            main.RowStyles[2].Height = (compact ? 48 : 54) * scale;
+            main.RowStyles[4].Height = (compact ? 42 : 46) * scale;
+            main.RowStyles[6].Height = (compact ? 42 : 46) * scale;
+            main.Padding = new Padding((int)(22 * scale), (int)((compact ? 8 : 16) * scale), (int)(22 * scale), (int)(8 * scale));
+        }
+        SizeChanged += (_, _) => Density(); Density();
         SystemEvents.UserPreferenceChanged += SystemThemeChanged; Disposed += (_, _) => { SystemEvents.UserPreferenceChanged -= SystemThemeChanged; tips.Dispose(); };
         ApplyAppearance();
         UiLanguage.Bind(this, open, mediaLabels[0], mediaLabels[1]);
@@ -101,6 +119,12 @@ public partial class MainForm
         if (rows == 1) layout.RowStyles.Add(new(SizeType.Percent, 100));
         if (columns == 1) layout.ColumnStyles.Add(new(SizeType.Percent, 100));
         return layout;
+    }
+    static SectionPanel WithRules(Control content, RuleEdges edges)
+    {
+        var frame = new SectionPanel { Dock = DockStyle.Fill, Edges = edges, Margin = Padding.Empty,
+            Padding = new Padding(edges.HasFlag(RuleEdges.Left) ? 1 : 0, edges.HasFlag(RuleEdges.Top) ? 1 : 0, edges.HasFlag(RuleEdges.Right) ? 1 : 0, edges.HasFlag(RuleEdges.Bottom) ? 1 : 0) };
+        content.Dock = DockStyle.Fill; frame.Controls.Add(content); return frame;
     }
     void Surface(Control control) => surfaceControls.Add(control);
     static void ButtonStyle(ModernButton button, string text, AppIcon glyph, int width, bool primary = false, bool quiet = false)
@@ -124,8 +148,13 @@ public partial class MainForm
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); WindowsAppearance.TitleBar(this, palette); }
     void ApplyAppearance()
     {
-        download.Text = settings.RecheckDownloaded ? "Проверить и докачать" : "Скачать недостающее";
+        download.Text = "Скачать…";
         palette = WindowsAppearance.Read(settings); ThemeTree(this); WindowsAppearance.TitleBar(this, palette);
+        if (datePopup is CalendarPopup popup && !popup.IsDisposed)
+        {
+            popup.ApplyPalette(palette);
+            foreach (var host in popup.Items.OfType<ToolStripControlHost>()) ThemeTree(host.Control);
+        }
         foreach (Form owned in OwnedForms) { ThemeTree(owned); WindowsAppearance.TitleBar(owned, palette); }
         foreach (DataGridViewRow row in table.Rows) if (row.Tag is Post p) PaintRow(row, p);
         for (int i = 0; i < 2; i++) mediaLabels[i].ForeColor = mediaErrors[i] ? palette.Error : palette.Text;
@@ -134,11 +163,13 @@ public partial class MainForm
     void ThemeTree(Control control)
     {
         bool surface = surfaceControls.Contains(control);
-        control.BackColor = control is Form ? palette.Background : surface || control is TextBox or ComboBox or DataGridView or TextFieldFrame ? palette.Surface : control.Parent?.BackColor ?? palette.Background;
+        if (control.Tag as string != "color-swatch") control.BackColor = control is Form ? palette.Background : surface || control is TextBox or ComboBox or DataGridView or TextFieldFrame or DateEntry or DateCalendar ? palette.Surface : control.Parent?.BackColor ?? palette.Background;
         control.ForeColor = control.Tag as string == "muted" ? palette.Muted : palette.Text;
         if (control is ModernButton button) { button.Palette = palette; button.Invalidate(); }
         if (control is ModernProgress bar) { bar.Palette = palette; bar.Invalidate(); }
         if (control is ModernCombo combo) { combo.Palette = palette; combo.Invalidate(); }
+        if (control is DateEntry date) { date.Palette = palette; date.Invalidate(); }
+        if (control is DownloadOption option) { option.Palette = palette; option.Invalidate(); }
         if (control is TextFieldFrame textFrame) { textFrame.Palette = palette; textFrame.Invalidate(); }
         if (control is ModernCheckBox check) { check.Palette = palette; check.Invalidate(); }
         if (control is ThemeScrollBar scroll) { scroll.Palette = palette; scroll.Invalidate(); }
@@ -161,12 +192,7 @@ public partial class MainForm
         }
         foreach (Control child in control.Controls) ThemeTree(child);
     }
-    Form Dialog(string title, Size size)
-    {
-        var form = new Form { Text = title, ClientSize = size, MinimumSize = new(size.Width + 16, size.Height + 39), Font = Font, Icon = BrandAssets.Icon, StartPosition = FormStartPosition.CenterParent, ShowInTaskbar = false, MaximizeBox = false, MinimizeBox = false, AutoScaleDimensions = new(96, 96), AutoScaleMode = AutoScaleMode.Dpi };
-        form.HandleCreated += (_, _) => WindowsAppearance.TitleBar(form, palette); return form;
-    }
-    string? AskUrl(string title, string label, string placeholder, string action, Func<string, string> validate)
+    async Task<string?> AskUrl(string title, string label, string placeholder, string action, Func<string, string> validate)
     {
         using var dialog = Dialog(title, new(640, 220)); var layout = Compose(1, 4); layout.Padding = new(24);
         layout.RowStyles.Add(new(SizeType.Absolute, 30)); layout.RowStyles.Add(new(SizeType.Absolute, 42)); layout.RowStyles.Add(new(SizeType.Percent, 100)); layout.RowStyles.Add(new(SizeType.Absolute, 38));
@@ -178,17 +204,17 @@ public partial class MainForm
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = Padding.Empty };
         var accept = new ModernButton { Text = action, Width = 165, Primary = true }; var cancel = new ModernButton { Text = "Отмена", Width = 105, DialogResult = DialogResult.Cancel }; buttons.Controls.AddRange([accept, cancel]); layout.Controls.Add(buttons, 0, 3); dialog.Controls.Add(layout);
         accept.Click += (_, _) => { try { validate(input.Text); dialog.DialogResult = DialogResult.OK; } catch (Exception e) { UiLanguage.SetError(error, e.Message); error.ForeColor = palette.Error; } };
-        dialog.AcceptButton = accept; dialog.CancelButton = cancel; ThemeTree(dialog); UiLanguage.Bind(dialog); dialog.Shown += (_, _) => input.Focus();
-        return dialog.ShowDialog(this) == DialogResult.OK ? input.Text.Trim() : null;
+        dialog.AcceptButton = accept; dialog.CancelButton = cancel; ThemeTree(dialog); UiLanguage.Bind(dialog); dialog.InitialFocus = input;
+        return await ShowEmbeddedDialog(dialog) == DialogResult.OK ? input.Text.Trim() : null;
     }
-    void ShowAddAuthor()
+    async Task ShowAddAuthor()
     {
-        var url = AskUrl("Добавить автора", "Ссылка на страницу автора", "https://pawchive.pw/patreon/user/12345", "Добавить", value => { var c = Creator.Parse(value); if (settings.Creators.Any(a => a.Key == c.Key)) throw new ArgumentException("Этот автор уже в списке."); return c.Url; });
+        var url = await AskUrl("Добавить автора", "Ссылка на страницу автора", "https://pawchive.pw/patreon/user/12345", "Добавить", value => { var c = Creator.Parse(value); if (settings.Creators.Any(a => a.Key == c.Key)) throw new ArgumentException("Этот автор уже в списке."); return c.Url; });
         if (url is not null) { authorUrl.Text = url; AddCreator(); }
     }
     async Task ShowDownloadPost()
     {
-        var url = AskUrl("Скачать пост по ссылке", "Ссылка на конкретный пост", "https://pawchive.pw/patreon/user/123/post/456", "Скачать", value => PostAddress.Parse(value).Id);
+        var url = await AskUrl("Скачать пост по ссылке", "Ссылка на конкретный пост", "https://pawchive.pw/patreon/user/123/post/456", "Скачать", value => PostAddress.Parse(value).Id);
         if (url is not null) { postUrl.Text = url; await Run(DownloadSpecificPost, false); }
     }
     async Task ShowAppearance()
@@ -207,13 +233,13 @@ public partial class MainForm
         var mode = new ModernCombo { Dock = DockStyle.Top, Margin = new(0, 0, 12, 0) }; mode.Items.AddRange(["Как в Windows", "Выбрать свой"]); mode.SelectedIndex = settings.AccentMode == "custom" ? 1 : 0;
         string selectedColor = settings.AccentColor; var color = new ModernButton { Text = "Выбрать цвет…", Width = 150, Enabled = mode.SelectedIndex == 1 };
         mode.SelectedIndexChanged += (_, _) => color.Enabled = mode.SelectedIndex == 1;
-        color.Click += (_, _) => { using var picker = new ColorDialog { FullOpen = true, Color = ColorTranslator.FromHtml(selectedColor) }; if (picker.ShowDialog(dialog) == DialogResult.OK) { selectedColor = ColorTranslator.ToHtml(picker.Color); if (!selectedColor.StartsWith('#')) selectedColor = $"#{picker.Color.R:X2}{picker.Color.G:X2}{picker.Color.B:X2}"; color.Text = selectedColor; } };
+        color.Click += async (_, _) => { if (await ChooseAccentColor(selectedColor) is string chosen) { selectedColor = chosen; color.Text = selectedColor; } };
         colorRow.Controls.Add(mode, 0, 0); colorRow.Controls.Add(color, 1, 0); layout.Controls.Add(colorRow, 0, 3);
         layout.Controls.Add(new Label { Text = "Папка загрузок и истории", AutoSize = true }, 0, 4); var folderRow = Compose(2, 1); folderRow.ColumnStyles.Add(new(SizeType.Percent, 100)); folderRow.ColumnStyles.Add(new(SizeType.Absolute, 155));
         var path = new TextBox { Text = settings.Root, ReadOnly = true, BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, Margin = Padding.Empty };
-        var pathFrame = new SurfacePanel { Height = 38, Dock = DockStyle.Top, Padding = new(8, 8, 8, 6), Outline = true, Margin = new(0, 0, 12, 0) }; pathFrame.Controls.Add(path);
+        var pathFrame = new TextFieldFrame(path) { Height = 38, Dock = DockStyle.Top, Margin = new(0, 0, 12, 0) };
         var choose = new ModernButton { Text = "Изменить…", Width = 150, Glyph = AppIcon.Folder, Enabled = operation is null };
-        choose.Click += (_, _) => { using var picker = new FolderBrowserDialog { SelectedPath = path.Text, Description = Locale.T("Папка для файлов и истории скачиваний"), UseDescriptionForTitle = true }; if (picker.ShowDialog(dialog) == DialogResult.OK) path.Text = picker.SelectedPath; };
+        choose.Click += async (_, _) => { if (await ChooseLibraryFolder(path.Text) is string chosen) path.Text = chosen; };
         folderRow.Controls.Add(pathFrame, 0, 0); folderRow.Controls.Add(choose, 1, 0); layout.Controls.Add(folderRow, 0, 5);
         layout.Controls.Add(new Label { Text = "Загрузка", AutoSize = true }, 0, 6);
         var options = Compose(1, 2); options.RowStyles.Add(new(SizeType.Percent, 50)); options.RowStyles.Add(new(SizeType.Percent, 50));
@@ -223,7 +249,7 @@ public partial class MainForm
         layout.Controls.Add(new Label { Text = "Превью сохраняются отдельно от оригиналов в подпапку previews.\nПовторная проверка заново получает сведения о постах,\nно не перекачивает готовые файлы. Запуск — кнопкой скачивания.\nВ режиме «Как в Windows» оформление меняется вместе с системой.", Dock = DockStyle.Fill, Tag = "muted", Font = new("Segoe UI", 9) }, 0, 8);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = Padding.Empty }; var save = new ModernButton { Text = "Сохранить", Primary = true, Width = 130, DialogResult = DialogResult.OK }; var cancel = new ModernButton { Text = "Отмена", Width = 110, DialogResult = DialogResult.Cancel };
         actions.Controls.AddRange([save, cancel]); layout.Controls.Add(actions, 0, 9); dialog.Controls.Add(settingsBody); dialog.AcceptButton = save; dialog.CancelButton = cancel; ThemeTree(dialog); UiLanguage.Bind(dialog);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (await ShowEmbeddedDialog(dialog) != DialogResult.OK) return;
         if (path.Text != settings.Root && !await ChangeRoot(path.Text)) return;
         settings.Theme = theme.SelectedIndex switch { 1 => "light", 2 => "dark", _ => "system" }; settings.AccentMode = mode.SelectedIndex == 1 ? "custom" : "system"; settings.AccentColor = selectedColor;
         bool changedPreviews = settings.DownloadPreviews != previews.Checked;
@@ -252,6 +278,9 @@ public partial class MainForm
         try
         {
             Locale.Language = settings.Language;
+            dateFrom.PlaceholderText = dateTo.PlaceholderText = settings.Language == "en" ? "dd.mm.yyyy" : "дд.мм.гггг";
+            tips.SetToolTip(dateFrom, Locale.T("С даты — для таблицы и загрузки"));
+            tips.SetToolTip(dateTo, Locale.T("По дату включительно — для таблицы и загрузки"));
             ConfigurePostColumns();
             UiLanguage.Refresh(this);
             tips.SetToolTip(add, Locale.T("Добавить автора по ссылке"));

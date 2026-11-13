@@ -41,8 +41,8 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
-        var path = Path.Combine(AppContext.BaseDirectory, "ui-settings-1.9.json");
-        var root = Path.Combine(AppContext.BaseDirectory, "Downloads-1.9");
+        var path = Path.Combine(AppContext.BaseDirectory, "ui-settings-1.10.json");
+        var root = Path.Combine(AppContext.BaseDirectory, "Downloads-1.10");
         var creators = new List<Creator> { new("patreon", "demo-a", "Автор А"), new("fanbox", "demo-b", "Автор Б"), new("patreon", "demo-c", "Автор В"), new("fanbox", "demo-d", "Автор Г", false), new("patreon", "demo-e", "Автор Д", false) };
         foreach (var creator in creators)
         {
@@ -54,6 +54,7 @@ static class Program
                     content = "<p>Описание поста. <a href='https://example.com/collection'>Внешняя ссылка</a></p>",
                     file = new { name = "illustration.jpg", path = $"/demo/{creator.Id}/{i}.jpg" }, attachments = new[] { new { name = "source-files.zip", path = $"/demo/{creator.Id}/{i}.zip" } } }));
             }
+            catalog.NewPostIds = catalog.Posts.Take(3).Select(p => Post.Str(p, "id")).ToList();
             catalog.Save(root);
         }
         if (!File.Exists(path)) Storage.WriteJson(path, new Settings { Root = root, Creators = creators, Theme = "dark", Language = "en" });

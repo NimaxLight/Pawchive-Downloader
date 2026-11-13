@@ -28,6 +28,11 @@ sealed class SkippableStream(Action started) : MemoryStream(new byte[1048576])
         await Task.Delay(Timeout.Infinite, token); return 0;
     }
 }
+sealed class GatedStream(Task gate) : MemoryStream(System.Text.Encoding.UTF8.GetBytes("complete media"))
+{
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default)
+    { await gate.WaitAsync(token); return await base.ReadAsync(buffer, token); }
+}
 
 static class Program
 {
@@ -105,6 +110,59 @@ static class Program
                 posts.Remove(tooltipPost); Call(form, "FillPosts");
                 Field<ModernButton>(form, "nextPage").PerformClick(); Check(table.Rows.Count == 15, "Pagination second page");
                 Field<ModernButton>(form, "previousPage").PerformClick();
+                Call(form, "SetBusy", true);
+                Check(Field<ModernButton>(form, "nextPage").Enabled, "Pagination remains available during an operation");
+                Field<ModernButton>(form, "nextPage").PerformClick(); Check(table.Rows.Count == 15, "Paging during a download opens the next page");
+                Call(form, "SetBusy", false); Field<ModernButton>(form, "previousPage").PerformClick();
+                Field<ModernButton>(form, "pickMatching").PerformClick();
+                var marked = Field<HashSet<string>>(form, "pickedPosts");
+                Check(marked.Count == 215, "Select all matching marks all pages rather than just displayed rows");
+                Field<TextBox>(form, "dateFrom").Text = "12.11.2026"; Call(form, "FillPosts");
+                Check(table.Rows.Count == 0 && marked.Count == 215 && ((List<Post>)Call(form, "BuildDownloadPlan", DownloadMode.Picked)!).Count == 0, "Period restricts queue and table while preserving out-of-period manual marks");
+                Field<TextBox>(form, "dateFrom").Text = "31.02.2026"; Call(form, "FillPosts");
+                Check(!Field<ModernButton>(form, "pickMatching").Enabled, "Invalid date prevents accidental bulk selection");
+                Field<TextBox>(form, "dateFrom").Clear(); Field<ModernButton>(form, "clearPicked").PerformClick();
+                Check(marked.Count == 0 && table.Rows.Count == 200, "Clearing period and selection restores the full view");
+                Field<TextBox>(form, "dateFrom").Focus();
+                var openCalendar = All(form).OfType<ModernButton>().Single(b => b.AccessibleName == "Календарь даты начала");
+                var calendarPoint = (IntPtr)(((openCalendar.Height / 2) << 16) | (openCalendar.Width / 2));
+                SendMessage(openCalendar.Handle, 0x201, (IntPtr)1, calendarPoint); SendMessage(openCalendar.Handle, 0x202, IntPtr.Zero, calendarPoint);
+                await Task.Delay(100);
+                var livePopup = Field<ToolStripDropDown>(form, "datePopup");
+                Check(livePopup.Visible && livePopup.Width >= 300 && livePopup.Height >= 300, $"Clicking a calendar from a focused date field opens a usable popup ({livePopup.Visible}, {livePopup.Width} x {livePopup.Height})");
+                livePopup.Close();
+                Call(form, "ShowDownloadChoice");
+                var downloadCard = Field<Panel>(form, "downloadManager");
+                Check(All(downloadCard).OfType<Label>().Count(l => l.Text.Contains("Post ")) <= 5, "Download preview never enumerates the complete table");
+                using (var image = new Bitmap(downloadCard.Width, downloadCard.Height)) { downloadCard.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size)); image.Save(Path.Combine(AppContext.BaseDirectory, "download-choice.png")); }
+                Check(All(downloadCard).OfType<ModernButton>().Any(b => b.Text == "Начать загрузку"), "Prepared queue has an explicit start action");
+                Call(form, "CloseDownloadChoice");
+                settings.Language = "en"; Call(form, "ApplyUiLanguage");
+                Call(form, "ShowDownloadChoice");
+                var englishChoice = Field<Panel>(form, "downloadManager");
+                Check(englishChoice.Text == "What to download?" && All(englishChoice).OfType<RadioButton>().Any(r => r.Text.StartsWith("New posts only")) && All(englishChoice).OfType<Label>().Any(l => l.Text == "And 210 more posts"), "Download dialog localizes modes and bounded preview counts");
+                Call(form, "CloseDownloadChoice"); settings.Language = "ru"; Call(form, "ApplyUiLanguage");
+                DateOnly? calendarResult = null;
+                using (var calendar = new DateCalendar(new DateOnly(2026, 11, 13), day => calendarResult = day, _ => { }))
+                {
+                    calendar.CreateControl();
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == "2026").PerformClick();
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == "2027").PerformClick();
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == System.Globalization.CultureInfo.GetCultureInfo("ru-RU").DateTimeFormat.GetAbbreviatedMonthName(2)).PerformClick();
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == "28").PerformClick();
+                    Check(calendarResult == new DateOnly(2027, 2, 28), "Calendar supports year, month, and day selection");
+                }
+                Locale.Language = "en";
+                using (var calendar = new DateCalendar(new DateOnly(2028, 2, 1), day => calendarResult = day, _ => { }))
+                {
+                    calendar.CreateControl();
+                    Check(All(calendar).OfType<ModernButton>().Any(b => b.Text == "February") && All(calendar).OfType<ModernButton>().Any(b => b.Text == "Today"), "English calendar localizes month and action buttons");
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == "29").PerformClick();
+                    Check(calendarResult == new DateOnly(2028, 2, 29), "Calendar supports leap-day selection");
+                    All(calendar).OfType<ModernButton>().Single(b => b.Text == "Clear date").PerformClick();
+                    Check(calendarResult is null, "Calendar clears an existing publication boundary");
+                }
+                Locale.Language = "ru";
                 var originalPosts = posts.ToArray();
                 var secondCreator = new Creator("fanbox", "456", "Second author");
                 var standaloneCreator = new Creator("patreon", "789", "Standalone author");
@@ -184,7 +242,7 @@ static class Program
                 using var timer = new System.Windows.Forms.Timer { Interval = 100 };
                 timer.Tick += (_, _) =>
                 {
-                    var dialog = form.OwnedForms.FirstOrDefault(); if (dialog is null) return;
+                    var dialog = Field<EmbeddedDialog?>(form, "embeddedDialog"); if (dialog is null) return;
                     timer.Stop();
                     var combos = All(dialog).OfType<ModernCombo>().Where(c => c.Tag as string != "language-options").ToArray(); combos[0].SelectedIndex = 1; combos[1].SelectedIndex = 0;
                     var colorButton = All(dialog).OfType<ModernButton>().First(b => b.Text == "Выбрать цвет…");
@@ -205,17 +263,17 @@ static class Program
                 int addStage = 0;
                 addTimer.Tick += (_, _) =>
                 {
-                    var dialog = form.OwnedForms.FirstOrDefault(); if (dialog is null) return;
+                    var dialog = Field<EmbeddedDialog?>(form, "embeddedDialog"); if (dialog is null) return;
                     var input = All(dialog).OfType<TextBox>().Single();
                     Check(input.Parent is TextFieldFrame && input.BorderStyle == BorderStyle.None, "URL input uses themed frame without native border");
                     var accept = All(dialog).OfType<ModernButton>().First(b => b.Text == "Добавить");
                     if (addStage++ == 0) { input.Text = "https://example.com/wrong"; accept.PerformClick(); Check(dialog.DialogResult != DialogResult.OK, "Invalid author rejected inside dialog"); }
                     else { addTimer.Stop(); input.Text = "https://pawchive.pw/patreon/user/555"; accept.PerformClick(); }
                 };
-                addTimer.Start(); Call(form, "ShowAddAuthor");
+                addTimer.Start(); await (Task)Call(form, "ShowAddAuthor")!;
                 Check(settings.Creators.Any(c => c.Id == "555"), "Author added through new dialog");
                 using var cancelTimer = new System.Windows.Forms.Timer { Interval = 100 };
-                cancelTimer.Tick += (_, _) => { var dialog = form.OwnedForms.FirstOrDefault(); if (dialog is null) return; cancelTimer.Stop(); All(dialog).OfType<ModernCombo>().First(c => c.Tag as string != "language-options").SelectedIndex = 2; dialog.DialogResult = DialogResult.Cancel; };
+                cancelTimer.Tick += (_, _) => { var dialog = Field<EmbeddedDialog?>(form, "embeddedDialog"); if (dialog is null) return; cancelTimer.Stop(); All(dialog).OfType<ModernCombo>().First(c => c.Tag as string != "language-options").SelectedIndex = 2; dialog.DialogResult = DialogResult.Cancel; };
                 cancelTimer.Start(); await (Task)Call(form, "ShowAppearance")!;
                 Check(settings.Theme == "light", "Cancel leaves appearance unchanged");
                 Field<ModernCombo>(form, "filter").SelectedIndex = 2; Check(table.Rows.Count == 0, "Downloaded filter");
@@ -262,7 +320,7 @@ static class Program
                 using var languageTimer = new System.Windows.Forms.Timer { Interval = 100 };
                 languageTimer.Tick += (_, _) =>
                 {
-                    var dialog = form.OwnedForms.FirstOrDefault(); if (dialog is null) return;
+                    var dialog = Field<EmbeddedDialog?>(form, "embeddedDialog"); if (dialog is null) return;
                     languageTimer.Stop();
                     Check(dialog.Text == "Settings" && All(dialog).OfType<CheckBox>().Any(c => c.Text == "Download image previews"), "English settings dialog and download options");
                     var languageChoice = All(dialog).OfType<ModernCombo>().Single(c => c.Tag as string == "language-options");
@@ -398,6 +456,21 @@ static class Program
                 Func<Task> failHighlight = () => Task.FromException(new IOException("test transfer failure"));
                 try { await (Task)Call(form, "WithCreatorHighlight", firstTransfer, failHighlight)!; } catch (IOException) { }
                 Check(Field<string?>(form, "downloadingCreator") is null, "Transfer error always clears active creator highlight");
+                var frozenA = Transfer(creator, "frozen-a", "2026-11-12"); var frozenB = Transfer(secondCreator, "frozen-b", "2026-11-11");
+                frozenA.IsNew = frozenB.IsNew = true;
+                posts.Clear(); posts.AddRange([frozenA, frozenB]); Call(form, "FillPosts");
+                typeof(MainForm).GetField("downloadPlan", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, new[] { frozenA, frozenB });
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                flowHandler.MediaContent = request => request.RequestUri!.AbsolutePath.Contains("frozen-a") ? new StreamContent(new GatedStream(gate.Task)) : null;
+                flowHandler.OnRequest = request =>
+                {
+                    if (!request.RequestUri!.AbsolutePath.Contains("frozen-a")) return;
+                    form.BeginInvoke(() => { Field<TextBox>(form, "dateFrom").Text = "01.01.2099"; Field<HashSet<string>>(form, "pickedPosts").Clear(); Call(form, "FillPosts"); gate.TrySetResult(); });
+                };
+                await (Task)Call(form, "DownloadPosts", CancellationToken.None)!; flowHandler.MediaContent = null; flowHandler.OnRequest = null;
+                Check(history.Posts[frozenA.Key].Complete && history.Posts[frozenB.Key].Complete && table.Rows.Count == 0, "Changing dates and manual selection during a download does not change the confirmed queue");
+                Check(!frozenA.IsNew && !frozenB.IsNew, "Completed queue removes New badges");
+                Field<TextBox>(form, "dateFrom").Clear(); Call(form, "FillPosts");
                 Post SkipFixture(string id, bool full) => new() { Creator = creator, Raw = JsonSerializer.SerializeToElement(new { id, title = id, published = "2026-11-12", has_full = true, detail_fetched = true, file = new { name = id + "-ready.bin", path = "/skip/" + id + "-ready.bin", server = "https://n1.pawchive.pw" }, attachments = full ? new[] { new { name = id + "-slow1.bin", path = "/skip/" + id + "-slow1.bin", server = "https://n1.pawchive.pw" }, new { name = id + "-slow2.bin", path = "/skip/" + id + "-slow2.bin", server = "https://n1.pawchive.pw" } } : [] }) };
                 var preSaved = SkipFixture("skip-test", false);
                 await new Downloader(Field<Api>(form, "api"), settings.Root, history).SavePost(preSaved, _ => { }, (long received, long? total) => { }, CancellationToken.None);
@@ -426,6 +499,7 @@ static class Program
                 stopped.Cancel(); Call(form, "SkipCurrentPost");
                 Check(stoppedPost.IsCancellationRequested && !Field<bool>(form, "postSkipRequested"), "Stop cancellation takes priority over post skip");
                 Call(form, "EndCurrentPost", stoppedPost);
+                await UpgradeChecks();
                 Console.WriteLine($"PASS: {assertions} appearance, contrast, layout, settings, paging and progress checks.");
             }
             catch (Exception e) { failure = e; }
@@ -434,4 +508,171 @@ static class Program
         Application.Run(form);
         if (failure is not null) { Console.Error.WriteLine(failure); Environment.ExitCode = 1; }
     }
+    static async Task UpgradeChecks()
+    {
+        string root = Path.Combine(AppContext.BaseDirectory, "test-library-upgrade-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root); string settingsPath = Path.Combine(root, "settings.json");
+        var creator = new Creator("patreon", "upgrade-author", "Saved creator");
+        Post P(string id) => new() { Creator = creator, Raw = JsonSerializer.SerializeToElement(new { id, title = id, published = "2026-11-13", has_full = true, detail_fetched = true, content = "A fully imported post.", file = new { name = id + ".bin", path = "/upgrade/" + id + ".bin" }, attachments = Array.Empty<object>() }) };
+        var completed = P("saved-complete"); var pending = P("saved-pending");
+        using var api = new Api(new FlowHandler(), TimeSpan.Zero); var history = new History();
+        await new Downloader(api, root, history).SavePost(completed, new Action<string>(_ => { }), new Action<MediaProgress>(_ => { }), CancellationToken.None);
+        await Catalog.SavePost(root, completed); await Catalog.SavePost(root, pending);
+        var catalog = Catalog.Load(root, creator); catalog.Complete = true; catalog.Save(root);
+        var oldCatalog = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Catalog.FilePath(root, creator)))!.AsObject(); oldCatalog.Remove("NewPostIds");
+        File.WriteAllText(Catalog.FilePath(root, creator), oldCatalog.ToJsonString());
+        File.WriteAllText(settingsPath, JsonSerializer.Serialize(new { Root = root, Creators = new[] { creator }, Theme = "dark", Language = "ru" }));
+        var handler = new FlowHandler { FullPost = completed.Raw };
+        using var form = new MainForm(new Api(handler, TimeSpan.Zero), settingsPath); form.Show();
+        for (int i = 0; i < 200 && Field<DataGridView>(form, "table").Rows.Count != 2; i++) await Task.Delay(10);
+        var table = Field<DataGridView>(form, "table"); var picked = Field<HashSet<string>>(form, "pickedPosts");
+        Check(table.Rows.Count == 2 && Field<List<Post>>(form, "posts").Any(p => p.State == "Скачан"), "Upgrade loads an old catalog and completed download history");
+        var savedRow = table.Rows.Cast<DataGridViewRow>().Single(r => r.Tag is Post p && p.Key == completed.Key);
+        var rect = table.GetCellDisplayRectangle(table.Columns["Picked"]!.Index, savedRow.Index, false);
+        var point = (IntPtr)((((rect.Top + rect.Height / 2)) << 16) | (rect.Left + rect.Width / 2));
+        SendMessage(table.Handle, 0x201, (IntPtr)1, point); SendMessage(table.Handle, 0x202, IntPtr.Zero, point);
+        Check(picked.Contains(completed.Key) && (bool)savedRow.Cells["Picked"].Value!, "A real mouse click marks a previously completed post after replacing the EXE");
+        Check(((List<Post>)Call(form, "BuildDownloadPlan", DownloadMode.Picked)!).Any(p => p.Key == completed.Key), "Explicit manual selection includes completed posts without enabling global recheck");
+        typeof(MainForm).GetField("downloadPlan", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, ((List<Post>)Call(form, "BuildDownloadPlan", DownloadMode.Picked)!).ToArray());
+        await (Task)Call(form, "DownloadPosts", CancellationToken.None)!;
+        Check(handler.Calls.Keys.Any(path => path.Contains("/post/")) && !handler.Calls.Keys.Any(path => path.EndsWith(".bin")) && Field<History>(form, "history").Posts[completed.Key].Complete, "Manual recheck refreshes old post details while keeping its completed media file");
+        Field<ModernButton>(form, "pickMatching").PerformClick();
+        Check(picked.Count == 2 && table.Rows.Cast<DataGridViewRow>().All(r => (bool)r.Cells["Picked"].Value!), "Bulk selection lights every matching checkbox, including old completed posts");
+        using (var bitmap = new Bitmap(table.Width, table.Height))
+        {
+            table.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); var palette = Field<AppPalette>(form, "palette");
+            rect = table.GetCellDisplayRectangle(table.Columns["Picked"]!.Index, 0, false);
+            Check(Enumerable.Range(rect.Left, rect.Width).Any(x => Enumerable.Range(rect.Top, rect.Height).Any(y => bitmap.GetPixel(x, y).ToArgb() == palette.Accent.ToArgb())), "Checked post is visibly painted in the theme accent after upgrade");
+        }
+        Check(!Field<ModernButton>(form, "clearPeriod").Enabled, "Empty period has a disabled clear button");
+        Field<TextBox>(form, "dateFrom").Text = "13.11.2026"; Check(Field<ModernButton>(form, "clearPeriod").Enabled, "Entering a date enables clear period");
+        foreach (string language in new[] { "ru", "en" })
+        {
+            Field<Settings>(form, "settings").Language = language; Call(form, "ApplyUiLanguage");
+            var entry = (DateEntry)Field<TextBox>(form, "dateFrom").Parent!; Field<TextBox>(form, "dateFrom").Focus();
+            point = (IntPtr)(((entry.CalendarButton.Height / 2) << 16) | (entry.CalendarButton.Width / 2));
+            SendMessage(entry.CalendarButton.Handle, 0x201, (IntPtr)1, point); SendMessage(entry.CalendarButton.Handle, 0x202, IntPtr.Zero, point);
+            await Task.Delay(30); var popup = Field<ToolStripDropDown>(form, "datePopup");
+            Check(popup.Visible && popup.Width >= 300 && popup.Height >= 300, "Calendar opens with usable dimensions after upgrading in " + language);
+            var calendar = popup.Items.OfType<ToolStripControlHost>().Single().Control;
+            var background = calendar.BackColor;
+            Check(background == Field<AppPalette>(form, "palette").Surface, "Calendar opens in the lighter surface color in " + language);
+            Check(!popup.DropShadowEnabled && popup.Region is not null && !popup.Region.IsVisible(0, 0), "Calendar popup has rounded corners without a drop shadow");
+            Check(popup.Top >= entry.PointToScreen(new Point(0, entry.Height)).Y + 4, "Calendar opens slightly below the date field");
+            using (var bitmap = new Bitmap(popup.Width, popup.Height)) { popup.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(AppContext.BaseDirectory, "calendar-" + language + ".png")); }
+            All(calendar).OfType<ModernButton>().Single(b => b.Text == DateTime.Today.Year.ToString()).PerformClick();
+            Check(calendar.BackColor == background, "Switching to years preserves the initial calendar color in " + language);
+            All(calendar).OfType<ModernButton>().Single(b => b.Text == DateTime.Today.Year.ToString()).PerformClick();
+            Check(calendar.BackColor == background, "Switching to months preserves the initial calendar color in " + language);
+            All(popup.Items.OfType<ToolStripControlHost>().Single().Control).OfType<ModernButton>().Single(b => b.Text == (language == "en" ? "Today" : "Сегодня")).PerformClick();
+            Check(!popup.Visible && Field<TextBox>(form, "dateFrom").Text == DateTime.Today.ToString("dd.MM.yyyy"), "Calendar date action updates the shared period in " + language);
+        }
+        Field<Settings>(form, "settings").Language = "ru"; Call(form, "ApplyUiLanguage");
+        Field<ModernButton>(form, "clearPeriod").PerformClick();
+        Call(form, "ShowDownloadChoice"); var card = Field<Panel>(form, "downloadManager");
+        Check(All(card).OfType<DownloadOption>().Count() == 4 && All(card).OfType<DownloadOption>().All(o => o.Description.Length > 0), "Download modes have bordered cards and descriptions");
+        Check(!All(card).OfType<Button>().Any(b => b.Text == "Выбрать в таблице"), "Download dialog has no redundant close-to-table button");
+        using (var bitmap = new Bitmap(card.Width, card.Height)) { card.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(AppContext.BaseDirectory, "download-choice-dark.png")); }
+        Call(form, "CloseDownloadChoice");
+        form.Size = form.MinimumSize; form.PerformLayout(); await Task.Delay(30);
+        var horizontal = All(form).OfType<ThemeScrollBar>().Single(s => s.Horizontal && s.Visible);
+        Check(table.ScrollBars == ScrollBars.None && horizontal.Maximum > 0 && horizontal.Palette!.Dark, "Small dark window uses a themed horizontal scrollbar instead of the white native control");
+        horizontal.Value = horizontal.Maximum;
+        Check(table.HorizontalScrollingOffset > 0, "Themed horizontal scrollbar moves the table columns");
+        Check(table.Height >= table.ColumnHeadersHeight + table.RowTemplate.Height * 2, "Small window retains room for post rows below its header");
+        using (var bitmap = new Bitmap(form.Width, form.Height)) { form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(AppContext.BaseDirectory, "workspace-small-dark.png")); }
+        var filter = Field<ModernCombo>(form, "filter"); filter.Focus(); Call(form, "SetBusy", true);
+        using (var bitmap = new Bitmap(filter.Width, filter.Height))
+        {
+            filter.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+            Check(bitmap.GetPixel(filter.Width / 2, filter.Height - 5).ToArgb() == filter.Palette!.Surface.ToArgb(), "A closed focused status filter has no selected-item fill during scanning");
+        }
+        Call(form, "SetBusy", false);
+        Field<Settings>(form, "settings").Language = "en"; Call(form, "ApplyUiLanguage"); Call(form, "ShowDownloadChoice");
+        card = Field<Panel>(form, "downloadManager");
+        Check(All(card).OfType<DownloadOption>().All(o => o.Height >= 60 && !o.Description.Any(c => c is >= 'А' and <= 'я')), "Compact English download dialog retains readable translated mode cards");
+        Check(All(card).OfType<ModernButton>().All(b => card.ClientRectangle.Contains(card.RectangleToClient(b.RectangleToScreen(b.ClientRectangle)))), "Compact download dialog keeps every action within the panel");
+        using (var bitmap = new Bitmap(card.Width, card.Height)) { card.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(AppContext.BaseDirectory, "download-choice-small-en.png")); }
+        Call(form, "CloseDownloadChoice");
+        await EmbeddedPanelChecks(form, root);
+        form.Close(); Locale.Language = "ru";
+    }
+    static async Task EmbeddedPanelChecks(MainForm form, string root)
+    {
+        async Task<EmbeddedDialog> WaitPanel()
+        {
+            for (int i = 0; i < 500; i++) { if (Field<EmbeddedDialog?>(form, "embeddedDialog") is EmbeddedDialog dialog) return dialog; await Task.Delay(10); }
+            throw new Exception("Embedded panel did not open");
+        }
+        void Capture(EmbeddedDialog dialog, string name)
+        {
+            var card = dialog.Parent!.Parent!;
+            using var bitmap = new Bitmap(card.Width, card.Height); card.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size)); bitmap.Save(Path.Combine(AppContext.BaseDirectory, name + ".png"));
+        }
+        int originalControls = form.Controls.Count;
+        var settings = Field<Settings>(form, "settings");
+        foreach (var language in new[] { "ru", "en" })
+        {
+            settings.Language = language; settings.Theme = language == "ru" ? "light" : "dark"; Call(form, "ApplyUiLanguage"); Call(form, "ApplyAppearance");
+            string before = JsonSerializer.Serialize(settings);
+            var settingsTask = (Task)Call(form, "ShowAppearance")!; var panel = await WaitPanel();
+            Check(form.OwnedForms.Length == 0 && panel.FindForm() == form && panel.Parent?.Parent is not Form, "Settings is embedded with no separate native window in " + language);
+            Call(form, "EmbeddedDialogKey", Keys.Tab);
+            Check(panel.Parent!.Parent!.ContainsFocus, "Tab navigation stays in the active embedded panel");
+            Check(All(panel).OfType<ModernButton>().All(b => panel.ClientRectangle.Contains(panel.RectangleToClient(b.RectangleToScreen(b.ClientRectangle)))), "Settings content fits the embedded panel in " + language);
+            Capture(panel, "settings-embedded-" + language);
+            All(panel).OfType<ModernCombo>().Where(c => c.Tag as string != "language-options").Last().SelectedIndex = 1;
+            All(panel).OfType<ModernButton>().Single(b => b.Text == Locale.T("Выбрать цвет…")).PerformClick();
+            var colorPanel = await WaitPanel(); Check(colorPanel != panel && colorPanel.FindForm() == form && form.OwnedForms.Length == 0, "Color picker nests inside Settings without a system window");
+            var hex = All(colorPanel).OfType<TextBox>().Single(); hex.Text = "invalid"; colorPanel.AcceptButton!.PerformClick();
+            Check(Field<EmbeddedDialog?>(form, "embeddedDialog") == colorPanel, "Invalid color stays inside its picker");
+            var hue = All(colorPanel).OfType<HueStrip>().Single(); var position = (IntPtr)(((hue.Height / 3) << 16) | (hue.Width / 2));
+            SendMessage(hue.Handle, 0x201, (IntPtr)1, position); SendMessage(hue.Handle, 0x202, IntPtr.Zero, position);
+            Check(hex.Text.StartsWith('#') && hex.Text.Length == 7, "Embedded hue strip updates the color value");
+            hex.Text = "#28A389"; Capture(colorPanel, "color-embedded-" + language); colorPanel.AcceptButton.PerformClick();
+            for (int i = 0; i < 50 && !All(panel).OfType<ModernButton>().Any(b => b.Text == "#28A389"); i++) await Task.Delay(10);
+            Check(Field<EmbeddedDialog?>(form, "embeddedDialog") == panel && All(panel).OfType<ModernButton>().Any(b => b.Text == "#28A389"), "Color selection returns to the unchanged Settings draft");
+            All(panel).OfType<ModernButton>().Single(b => b.Text == Locale.T("Изменить…")).PerformClick();
+            var folderPanel = await WaitPanel(); Check(folderPanel != panel && folderPanel.FindForm() == form && form.OwnedForms.Length == 0, "Folder chooser nests inside Settings without a system window");
+            var folderGrid = All(folderPanel).OfType<DataGridView>().Single(); var go = All(folderPanel).OfType<ModernButton>().Single(b => b.Text == Locale.T("Открыть"));
+            for (int i = 0; i < 500 && (folderGrid.Rows.Count == 0 || !go.Enabled); i++) await Task.Delay(10);
+            Check(folderGrid.Rows.Cast<DataGridViewRow>().Any(r => r.Tag is string p && p == Path.Combine(root, ".pawchive")), "Embedded folder chooser asynchronously lists the saved library directories");
+            var path = All(folderPanel).OfType<TextBox>().Single(); path.Text = Path.Combine(root, ".pawchive"); path.Focus(); Call(form, "EmbeddedDialogKey", Keys.Enter);
+            for (int i = 0; i < 500 && (!go.Enabled || !folderGrid.Rows.Cast<DataGridViewRow>().Any(r => r.Tag is string p && p == Path.Combine(root, ".pawchive", "catalog"))); i++) await Task.Delay(10);
+            Check(Field<EmbeddedDialog?>(form, "embeddedDialog") == folderPanel && folderGrid.Rows.Cast<DataGridViewRow>().Any(r => r.Tag is string p && p == Path.Combine(root, ".pawchive", "catalog")), "Enter navigates the typed folder instead of accepting the picker");
+            All(folderPanel).OfType<ModernButton>().Single(b => b.AccessibleName == Locale.T("На уровень выше")).PerformClick();
+            for (int i = 0; i < 500 && (!go.Enabled || path.Text != root); i++) await Task.Delay(10);
+            Check(path.Text == root, "Embedded folder chooser navigates up to the parent folder");
+            string chosen = Path.Combine(root, "chosen-" + language); path.Text = chosen;
+            Capture(folderPanel, "folder-embedded-" + language); folderPanel.AcceptButton!.PerformClick();
+            for (int i = 0; i < 500 && !All(panel).OfType<TextBox>().Any(t => t.Text == chosen); i++) await Task.Delay(10);
+            Check(Field<EmbeddedDialog?>(form, "embeddedDialog") == panel && Directory.Exists(chosen) && All(panel).OfType<TextBox>().Any(t => t.Text == chosen), "Folder selection returns to its parent and updates only the draft path");
+            panel.CancelButton!.PerformClick(); await settingsTask;
+            Check(JsonSerializer.Serialize(settings) == before, "Cancelling parent Settings discards nested color and folder choices");
+            var addTask = (Task)Call(form, "ShowAddAuthor")!; var add = await WaitPanel();
+            Check(form.OwnedForms.Length == 0 && add.FindForm() == form, "Add creator is an embedded panel in " + language);
+            All(add).OfType<TextBox>().Single().Text = "https://example.com/wrong"; add.AcceptButton!.PerformClick();
+            Check(Field<EmbeddedDialog?>(form, "embeddedDialog") == add && All(add).OfType<Label>().Any(l => l.Text == Locale.T("Вставьте ссылку на страницу автора, а не отдельного поста.") || l.ForeColor == Field<AppPalette>(form, "palette").Error), "Invalid creator URL uses an inline error rather than another window");
+            Capture(add, "author-embedded-" + language); Call(form, "EmbeddedDialogKey", Keys.Escape); await addTask;
+            var postTask = (Task)Call(form, "ShowDownloadPost")!; var post = await WaitPanel();
+            Check(form.OwnedForms.Length == 0 && post.FindForm() == form, "Single-post URL entry is an embedded panel in " + language);
+            Capture(post, "post-embedded-" + language); post.CancelButton!.PerformClick(); await postTask;
+            Check(Field<CancellationTokenSource?>(form, "operation") is null, "Cancelling single-post entry never starts a download");
+            var historyPath = Path.Combine(root, ".pawchive", "history.json"); var savedHistory = File.ReadAllBytes(historyPath);
+            var pagedHistory = History.Load(root);
+            for (int i = 0; i < 205; i++) pagedHistory.Posts["paged-" + i] = new PostEntry { Author = "Saved creator", Title = "History post " + i, CompletedAt = DateTimeOffset.Now.AddDays(-i).ToString("O"), Complete = true };
+            pagedHistory.Save(root);
+            var historyTask = (Task)Call(form, "ShowHistory")!; var history = await WaitPanel();
+            Check(form.OwnedForms.Length == 0 && history.FindForm() == form && All(history).OfType<DataGridView>().Single().Rows.Count == 200, "History remains populated inside an embedded panel in " + language);
+            All(history).OfType<ModernButton>().Single(b => b.Text == Locale.T("Далее")).PerformClick();
+            Check(All(history).OfType<DataGridView>().Single().Rows.Count == pagedHistory.Posts.Count - 200, "History pagination still works after embedding");
+            Capture(history, "history-embedded-" + language); history.AcceptButton!.PerformClick(); await historyTask; File.WriteAllBytes(historyPath, savedHistory);
+            form.ReportError("Test message"); var message = await WaitPanel();
+            Check(form.OwnedForms.Length == 0 && All(message).OfType<TextBox>().Any(t => t.ReadOnly && t.Text == "Test message"), "Error messages remain readable and copyable inside the application");
+            Call(form, "EmbeddedDialogKey", Keys.Escape); await Task.Delay(10);
+            Check(form.Controls.Count == originalControls && Field<EmbeddedDialog?>(form, "embeddedDialog") is null, "Closing all embedded panels leaves no backdrops or separate windows");
+            Check(form.DialogResult == DialogResult.None, "Embedded buttons never set a result on the main application window");
+        }
+    }
 }
+

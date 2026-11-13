@@ -10,8 +10,9 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-        Application.ThreadException += (_, e) => MessageBox.Show(Locale.Error(e.Exception.Message), "Pawchive", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        Application.Run(new MainForm());
+        using var main = new MainForm();
+        Application.ThreadException += (_, e) => main.ReportError(e.Exception.Message);
+        Application.Run(main);
     }
 }
 
@@ -82,11 +83,11 @@ public partial class MainForm : Form
         api = apiOverride ?? new Api();
         settingsPath = settingsFile ?? Path.Combine(AppContext.BaseDirectory, "settings.json");
         BuildWorkspace();
-        add.Click += (_, _) => ShowAddAuthor();
+        add.Click += async (_, _) => await ShowAddAuthor();
         remove.Click += (_, _) => RemoveCreator();
         scan.Click += async (_, _) => await Run(token => ScanPosts(token, false));
         fullScan.Click += async (_, _) => await Run(token => ScanPosts(token, true));
-        download.Click += async (_, _) => await Run(DownloadPosts);
+        download.Click += (_, _) => ShowDownloadChoice();
         downloadPost.Click += async (_, _) => await ShowDownloadPost();
         skipPost.Click += (_, _) => SkipCurrentPost();
         stop.Click += (_, _) => { operation?.Cancel(); stop.Enabled = false; skipPost.Enabled = false; status.Text = "Останавливаю. Завершённые файлы останутся в истории…"; };
@@ -96,11 +97,11 @@ public partial class MainForm : Form
         authorFilter.SelectedIndexChanged += (_, _) => { if (changingLanguage || updatingAuthorFilter) return; currentPage = 0; FillPosts(); };
         previousPage.Click += (_, _) => { if (currentPage > 0) currentPage--; FillPosts(); };
         nextPage.Click += (_, _) => { currentPage++; FillPosts(); };
-        table.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0 && table.Rows[e.RowIndex].Tag is Post p) OpenPath(p.Url); };
+        table.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0 && e.ColumnIndex != table.Columns["Picked"]!.Index && table.Rows[e.RowIndex].Tag is Post p) OpenPath(p.Url); };
         FormClosing += (_, e) =>
         {
             if (operation is not null) { closeAfterStop = true; operation.Cancel(); e.Cancel = true; status.Text = "Сохраняю историю и закрываю приложение…"; }
-            else { SaveSettings(); api.Dispose(); }
+            else { CloseAllEmbeddedDialogs(); SaveSettings(); datePopup?.Dispose(); api.Dispose(); }
         };
         Shown += async (_, _) => await LoadSettings();
     }
@@ -116,10 +117,10 @@ public partial class MainForm : Form
             }
             catch (Exception e)
             {
-                MessageBox.Show(Locale.Error("Не удалось прочитать настройки. Будут использованы исходные авторы. История скачиваний хранится отдельно.\r\n" + e.Message), Locale.T("Настройки"));
                 // Keep the damaged settings for recovery before the next save.
                 File.Copy(settingsPath, settingsPath + ".damaged-" + DateTime.Now.ToString("yyyyMMddHHmmss"), true);
                 settings = new();
+                await ShowMessage("Настройки", "Не удалось прочитать настройки. Будут использованы исходные авторы. История скачиваний хранится отдельно.\r\n" + e.Message);
             }
         }
         ApplyUiLanguage(); ApplyAppearance();
@@ -136,6 +137,7 @@ public partial class MainForm : Form
         var loaded = await Task.Run(() => (History: History.Load(libraryRoot), Catalogs: Catalog.LoadAll(libraryRoot)));
         settings.Root = libraryRoot; root.Text = libraryRoot;
         history = loaded.History;
+        pickedPosts.Clear();
         posts.Clear(); scanned.Clear(); directPosts.Clear(); catalogDates.Clear(); currentPage = 0;
         foreach (var catalog in loaded.Catalogs)
         {
@@ -149,7 +151,9 @@ public partial class MainForm : Form
             else posts.AddRange(catalog.ToPosts().Where(p => catalog.DirectPostIds.Contains(p.Id)));
             foreach (var id in catalog.DirectPostIds) directPosts.Add(catalog.Creator.Key + "/" + id);
         }
-        await RefreshStates(); FillAuthors(); FillPosts();
+        await RefreshStates();
+        foreach (var post in posts.Where(p => p.IsNew && p.State == "Скачан")) await Catalog.MarkDownloaded(settings.Root, post);
+        FillAuthors(); FillPosts();
         status.Text = posts.Count > 0 ? $"Открыто из сохранённого списка: {posts.Count} постов. Можно скачивать сразу; «Обновить новые» проверит сайт." : "Сохранённого списка пока нет. Нажмите «Обновить новые» для первой полной проверки.";
     }
     static string CatalogDate(string value) => DateTimeOffset.TryParse(value, out var date) ? date.ToLocalTime().ToString("dd.MM.yyyy HH:mm") : "Отдельные посты";
@@ -222,7 +226,7 @@ public partial class MainForm : Form
         finally
         {
             await RefreshStates();
-            SetDownloadingCreator(null);
+            SetDownloadingCreator(null); downloadPlan = null;
             sessionLock?.Dispose(); operation.Dispose(); operation = null;
             SetBusy(false); FillPosts(); progress.Style = ProgressBarStyle.Blocks;
             foreach (var bar in mediaBars) bar.Style = ProgressBarStyle.Blocks;
@@ -234,9 +238,9 @@ public partial class MainForm : Form
         scan.Enabled = fullScan.Enabled = !busy; download.Enabled = !busy && posts.Count > 0;
         root.Enabled = add.Enabled = remove.Enabled = authorUrl.Enabled = authors.Enabled = !busy;
         postUrl.Enabled = downloadPost.Enabled = !busy;
-        filter.Enabled = !busy; authorFilter.Enabled = !busy && authorFilter.Items.Count > 0; stop.Enabled = busy;
-        previousPage.Enabled = !busy && currentPage > 0;
-        nextPage.Enabled = !busy && (currentPage + 1) * PageSize < visiblePostCount;
+        filter.Enabled = true; authorFilter.Enabled = authorFilter.Items.Count > 0; stop.Enabled = busy;
+        previousPage.Enabled = currentPage > 0;
+        nextPage.Enabled = (currentPage + 1) * PageSize < visiblePostCount;
         if (expandedAuthors is not null) expandedAuthors.Enabled = !busy;
         if (!busy) { skipPost.Enabled = false; SetDownloadingCreator(null); authors.Invalidate(); }
         if (busy) progress.Style = ProgressBarStyle.Marquee;
@@ -284,6 +288,7 @@ public partial class MainForm : Form
         await Catalog.SavePost(settings.Root, post, true);
         directPosts.Add(post.Key);
         var previous = posts.FindIndex(p => p.Key == post.Key);
+        if (previous >= 0) post.IsNew = posts[previous].IsNew;
         if (previous >= 0) posts[previous] = post; else posts.Add(post);
         await RefreshStates(); FillPosts();
         if (!settings.RecheckDownloaded && history.State(settings.Root, post, settings.DownloadPreviews) == "Скачан") { ResetTransfers("Этот пост уже скачан"); progress.Value = 100; status.Text = "Все файлы этого поста уже сохранены."; return; }
@@ -296,6 +301,7 @@ public partial class MainForm : Form
             await WithCreatorHighlight(post, () => SaveMedia(downloader, post, 1, 1, postCancellation.Token));
             postCancellation.Token.ThrowIfCancellationRequested();
             FinishPost(post);
+            if (post.State == "Скачан") { await Catalog.MarkDownloaded(settings.Root, post); pickedPosts.Remove(post.Key); }
             status.Text = post.State == "Скачан" ? $"Файлы сохранены. Без доступной полной версии: {post.SkippedAssets().Count}. Подробности в post.txt." : "Пост сохранён частично. Доступные архивы обработаны; подробности в post.txt папки поста.";
             if (post.Warning.Length > 0) Log(post.Url + " — " + post.Warning);
         }
@@ -366,13 +372,15 @@ public partial class MainForm : Form
     async Task DownloadPosts(CancellationToken token)
     {
         var selected = Selected().Select(c => c.Key).ToHashSet();
-        var unscanned = Selected().Where(c => !scanned.Contains(c.Key)).ToList();
+        var plannedCreators = downloadPlan?.Select(p => p.Creator.Key).ToHashSet();
+        var unscanned = Selected().Where(c => !scanned.Contains(c.Key) && (plannedCreators is null || plannedCreators.Contains(c.Key))).ToList();
         if (unscanned.Count > 0)
         {
             status.Text = "Сначала проверьте всех отмеченных авторов: " + string.Join(", ", unscanned.Select(c => c.Name)); return;
         }
         await RefreshStates();
-        var pending = OrderedPosts(posts.Where(p => selected.Contains(p.Creator.Key) && (settings.RecheckDownloaded || p.State != "Скачан"))).ToList();
+        var pending = downloadPlan?.ToList() ?? BuildDownloadPlan(DownloadMode.Missing);
+        downloadPlan = null;
         if (pending.Count == 0) { status.Text = "Все найденные посты уже скачаны. Для поиска новых нажмите «Обновить новые»."; return; }
         var downloader = new Downloader(api, settings.Root, history, settings.DownloadPreviews);
         int done = 0, failed = 0, partial = 0, skipped = 0;
@@ -386,7 +394,7 @@ public partial class MainForm : Form
                 SetDownloadingCreator(post.Creator.Key);
                 try
                 {
-                    if (settings.RecheckDownloaded || post.Incomplete || post.Error.Length > 0)
+                    if (settings.RecheckDownloaded || post.State == "Скачан" || post.Incomplete || post.Error.Length > 0)
                     {
                         status.Text = $"Получаю актуальные данные поста {i + 1}/{pending.Count}: {post.Title}";
                         var detail = await api.Detail(post, postCancellation.Token);
@@ -399,6 +407,7 @@ public partial class MainForm : Form
                     await SaveMedia(downloader, post, i + 1, pending.Count, postCancellation.Token);
                     postCancellation.Token.ThrowIfCancellationRequested();
                     FinishPost(post);
+                    if (post.State == "Скачан") { await Catalog.MarkDownloaded(settings.Root, post); pickedPosts.Remove(post.Key); }
                     if (post.State == "Скачан") done++; else { partial++; Log(post.Url + " — " + post.Warning); }
                 }
                 catch (OperationCanceledException) when (postSkipRequested && !token.IsCancellationRequested)
@@ -432,20 +441,19 @@ public partial class MainForm : Form
             foreach (var creator in selected) authorFilter.Items.Add(new AuthorFilterItem(creator.Key, creator.Name));
             var index = authorFilter.Items.Cast<AuthorFilterItem>().ToList().FindIndex(item => item.Key == key);
             authorFilter.SelectedIndex = index >= 0 ? index : authorFilter.Items.Count > 0 ? 0 : -1;
-            authorFilter.Enabled = operation is null && selected.Count > 0;
+            authorFilter.Enabled = selected.Count > 0;
         }
         finally { authorFilter.EndUpdate(); updatingAuthorFilter = false; }
     }
     void FillPosts()
     {
         UpdateAuthorFilter();
-        var authorKey = (authorFilter.SelectedItem as AuthorFilterItem)?.Key;
         table.SuspendLayout(); table.Rows.Clear(); postRows.Clear();
-        var view = OrderedPosts(WorkspacePosts().Where(post => authorKey is null || post.Creator.Key == authorKey).Where(post => !(filter.SelectedIndex == 1 && post.State == "Скачан" || filter.SelectedIndex == 2 && post.State != "Скачан" || filter.SelectedIndex == 3 && !post.State.Contains("Ошибка") && post.State != "Неполный пост" && post.Warning.Length == 0))).ToList();
+        var view = VisiblePostView().ToList();
         visiblePostCount = view.Count;
         currentPage = Math.Clamp(currentPage, 0, Math.Max(0, (view.Count - 1) / PageSize));
-        previousPage.Enabled = operation is null && currentPage > 0;
-        nextPage.Enabled = operation is null && (currentPage + 1) * PageSize < view.Count;
+        previousPage.Enabled = currentPage > 0;
+        nextPage.Enabled = (currentPage + 1) * PageSize < view.Count;
         pageLabel.Text = view.Count == 0 ? "Нет постов" : $"{currentPage * PageSize + 1}–{Math.Min((currentPage + 1) * PageSize, view.Count)} из {view.Count}";
         var rows = new List<DataGridViewRow>();
         foreach (var post in view.Skip(currentPage * PageSize).Take(PageSize))
@@ -453,17 +461,18 @@ public partial class MainForm : Form
             int files = 0, links = 0;
             try { files = post.Assets(settings.DownloadPreviews).Count; links = post.Links().Count; } catch { }
             var row = new FastRow { Height = (int)(38 * DeviceDpi / 96f) };
-            row.CreateCells(table, post.Creator.Name, post.Published.Length >= 10 ? post.Published[..10] : "", post.Title, files, links, post.SkippedAssets().Count, Locale.T(post.State));
+            row.CreateCells(table, pickedPosts.Contains(post.Key), post.Creator.Name, post.Published.Length >= 10 ? post.Published[..10] : "", post.Title, files, links, post.SkippedAssets().Count, Locale.T(post.State));
             row.Tag = post; postRows[post.Key] = row; rows.Add(row);
         }
         if (rows.Count > 0) table.Rows.AddRange(rows.ToArray());
         foreach (DataGridViewColumn column in table.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
         foreach (var row in rows) PaintRow(row, (Post)row.Tag!);
-        table.ResumeLayout(); UpdateSummary(); UpdatePostFolder();
+        table.ResumeLayout(); UpdateSummary(); UpdatePostFolder(); UpdatePickedCaption();
     }
     void RefreshRow(Post post)
     {
         if (!postRows.TryGetValue(post.Key, out var row)) return;
+        row.Cells["Picked"].Value = pickedPosts.Contains(post.Key);
         row.Tag = post; row.Cells["State"].Value = Locale.T(post.State);
         row.Cells["Author"].Value = post.Creator.Name;
         row.Cells["Title"].Value = post.Title; row.Cells["Files"].Value = post.Assets(settings.DownloadPreviews).Count;
@@ -494,13 +503,17 @@ public partial class MainForm : Form
     {
         try { File.AppendAllText(Path.Combine(settings.Root, ".pawchive", "errors.log"), DateTimeOffset.Now.ToString("O") + " " + message + Environment.NewLine); } catch { }
     }
-    void Error(string message) { UiLanguage.SetError(status, message); MessageBox.Show(this, Locale.Error(message), "Pawchive", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+    void Error(string message) => ReportError(message);
     async Task ShowHistory()
     {
         try
         {
             var data = await Task.Run(() => History.Load(settings.Root));
-            using var dialog = new Form { Text = "История — " + settings.Root, Size = new(1000, 550), StartPosition = FormStartPosition.CenterParent, Font = Font, Icon = BrandAssets.Icon };
+            using var dialog = Dialog("История", new Size(1000, 510));
+            var layout = Compose(1, 3); layout.Padding = new Padding(22, 12, 22, 16);
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+            var folderLabel = new Label { Text = settings.Root, Dock = DockStyle.Fill, AutoEllipsis = true, Tag = "muted", Margin = Padding.Empty };
+            tips.SetToolTip(folderLabel, settings.Root); layout.Controls.Add(folderLabel, 0, 0);
             var grid = Grid(); grid.ReadOnly = true;
             grid.Columns.Add(new FastTextColumn { HeaderText = "Автор", Width = 170 });
             grid.Columns.Add(new FastTextColumn { HeaderText = "Пост", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
@@ -508,9 +521,12 @@ public partial class MainForm : Form
             grid.Columns.Add(new FastTextColumn { HeaderText = "Файлов", Width = 70 });
             grid.Columns.Add(new FastTextColumn { HeaderText = "Завершён", Width = 170 });
             var entries = data.Posts.Values.OrderByDescending(p => p.CompletedAt).ToList(); int page = 0;
-            var pager = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 58, Padding = new(8) };
+            var pager = Compose(2, 1); pager.Padding = new Padding(0, 10, 0, 0); pager.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pager.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
+            var paging = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, WrapContents = false };
             var previous = new ModernButton { Text = "Назад", Width = 96, Glyph = AppIcon.Left }; var next = new ModernButton { Text = "Далее", Width = 96, Glyph = AppIcon.Right }; var caption = new Label { AutoSize = true, Padding = new(5, 5, 0, 0) };
-            pager.Controls.AddRange([previous, next, caption]);
+            paging.Controls.AddRange([previous, next, caption]); pager.Controls.Add(paging, 0, 0);
+            var done = new ModernButton { Text = "Готово", Primary = true, Dock = DockStyle.Top, DialogResult = DialogResult.OK, Margin = Padding.Empty };
+            pager.Controls.Add(done, 1, 0); dialog.AcceptButton = dialog.CancelButton = done;
             void RenderHistory()
             {
                 grid.Rows.Clear();
@@ -524,8 +540,8 @@ public partial class MainForm : Form
             }
             previous.Click += (_, _) => { page--; RenderHistory(); }; next.Click += (_, _) => { page++; RenderHistory(); }; RenderHistory();
             grid.CellDoubleClick += (_, e) => { if (e.RowIndex >= 0 && grid.Rows[e.RowIndex].Tag is PostEntry p && Directory.Exists(Storage.Inside(settings.Root, p.Folder))) OpenPath(Storage.Inside(settings.Root, p.Folder)); };
-            dialog.Controls.Add(new GridHost(grid) { Dock = DockStyle.Fill }); dialog.Controls.Add(pager); dialog.MinimumSize = new(800, 420);
-            ThemeTree(dialog); UiLanguage.Bind(dialog); WindowsAppearance.TitleBar(dialog, palette); dialog.HandleCreated += (_, _) => WindowsAppearance.TitleBar(dialog, palette); dialog.ShowDialog(this);
+            layout.Controls.Add(new GridHost(grid) { Dock = DockStyle.Fill, Outline = true, Padding = new Padding(1) }, 0, 1); layout.Controls.Add(pager, 0, 2); dialog.Controls.Add(layout);
+            await ShowEmbeddedDialog(dialog, folderLabel);
         }
         catch (Exception e) { Error(e.Message); }
     }

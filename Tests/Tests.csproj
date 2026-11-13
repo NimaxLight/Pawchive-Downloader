@@ -2,4 +2,5 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup><Compile Include="../Pawchive/Core.cs" Link="Core.cs" /><Compile Include="../Pawchive/Catalog.cs" Link="Catalog.cs" /><Compile Include="../Pawchive/Archives.cs" Link="Archives.cs" /><PackageReference Include="SharpCompress" Version="0.50.8" /></ItemGroup>
   <ItemGroup><Compile Include="../Pawchive/Locale.cs" Link="Locale.cs" /><EmbeddedResource Include="../Pawchive/Locales/en.json" LogicalName="Pawchive.Strings.en.json" /></ItemGroup>
+  <ItemGroup><Compile Include="../Pawchive/DownloadSelection.cs" Link="DownloadSelection.cs" /></ItemGroup>
 </Project>

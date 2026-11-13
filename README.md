@@ -4,11 +4,21 @@ Windows desktop downloader for [Pawchive](https://pawchive.pw/) with download hi
 
 Pawchive Downloader helps you keep a local library of posts from selected creators. Add creator URLs, check their posts, and download the available files when you choose. The saved catalog and download history make later runs faster and let you pick up missing files without downloading completed ones again.
 
-**Current version: 1.9.3 · Windows x64 · English and Russian interface**
+**Current version: 1.10 · Windows x64 · English and Russian interface**
 
 This is an independent desktop application and is not affiliated with Pawchive or the platforms whose posts appear there.
 
 User guides: [English](docs/README.en.txt) · [Русский](docs/README.ru.txt).
+
+## New in 1.10
+
+- **Embedded dialogs.** Settings, history, URL entry, messages, and folder/color pickers share the main window and dimmed backdrop. Nested pickers return to Settings; cancelling Settings keeps the saved preferences unchanged.
+- **Choose what to download.** The embedded Download… panel offers all unfinished posts, new posts only, retries for problem posts, or manually selected posts. The existing recheck setting also allows processing completed posts without downloading finished files again.
+- **Persistent New badges.** The first complete scan establishes a baseline. Later newly discovered post IDs stay marked across sessions until successfully processed; errors, skips, and stopping do not clear the marker. Existing catalogs are preserved without marking every old post as new.
+- **One publication period.** Inclusive From/To fields above the table are shared by the view, mass selection, and all download modes. Type dates or choose a year, month and day from the mini calendar. Either boundary can be left blank.
+- **Selection across pages.** Mark individual posts, Shift-click ranges, or select every matching post across all pages using the current view filters. Marks are retained when paging or changing filters.
+- **Browse during downloads.** Pages, view filters, dates and marks remain available while downloading. A started queue has a fixed membership and order, so browsing cannot change it.
+- **Bounded queue preview.** Show the first five posts, the remaining count, and full totals instead of rendering thousands of queue entries.
 
 ## Fixed in 1.9.3
 
@@ -111,8 +121,8 @@ Use a writable location such as a folder under your user profile. The app stores
 1. Open **Settings** and choose your downloads/history folder. If needed, change **Interface language** to English, choose a theme and accent color, then save. The default language is Russian.
 2. Use the **+** button in the creators panel to add a Pawchive creator URL, for example `https://pawchive.pw/patreon/user/12345`. The creator list is empty on a clean first launch.
 3. Select the creators to process and click **Check for new posts**. The first check builds their catalogs; later checks reuse the saved information.
-4. Click **Download missing** to save the available files from known posts for the selected creators.
-5. On later visits, click **Check for new posts**, then **Download missing** again.
+4. Optionally set the publication period or mark specific posts. Click **Download…**, choose a mode, review the count, and click **Start download**.
+5. On later visits, click **Check for new posts**, then **Download…**; choose **New posts only** to process newly discovered posts.
 
 For a single post, click **Post by URL** and enter a URL such as `https://pawchive.pw/patreon/user/12345/post/67890`. The numeric IDs in these examples are placeholders.
 
@@ -122,7 +132,7 @@ Use **Full scan** if you want to revisit the complete listing, including older p
 
 Enable **Download image previews** in Settings if you also want preview images. They go into a `previews` subfolder and do not replace missing originals.
 
-Enable **Recheck downloaded posts** to revisit posts already shown as downloaded. The download action becomes **Recheck and download**: it refreshes post details, downloads newly available files, and keeps files already recorded as complete and present on disk. This is a manual action and does not create a background task.
+Enable **Recheck downloaded posts** to revisit posts already shown as downloaded. In the **Download…** panel, the first mode becomes **All posts (recheck and download)**. It refreshes post details, downloads newly available files, and keeps files already recorded as complete and present on disk. Completed posts can also be marked for the **Selected posts** mode without enabling this global setting. This is a manual action and does not create a background task.
 
 ### Download order and view filters
 
@@ -130,7 +140,25 @@ Check a creator to add them to the end of the active queue. Unchecking moves the
 
 The expand button beside **+** opens a centered creator manager inside the application, with a dimmed backdrop. It includes both groups and applies changes immediately. Close it with **Done**, its close button, Escape, or a click outside the panel.
 
-The creator filter offers the active creators and, when several are active, an option to view them all. It changes only the table; downloading always processes all active creators.
+The creator filter offers the active creators and, when several are active, an option to view them all. Creator and status filters change the table and what **Select all matching** marks. Batch download modes always use active creators, with the shared publication period applied. **Selected posts** additionally requires a manual mark.
+
+### New markers, dates and selecting posts
+
+**New** is a separate persistent marker rather than a replacement for download status. The first complete creator scan is a baseline. Subsequent checks mark previously unseen post IDs, including posts with older publication dates. Errors, skipped posts and stopping retain the marker. Successful processing clears it. An updated known post is not automatically new, and upgrading an existing catalog does not mark all its existing posts as new.
+
+The **From** and **To** fields above the table are the only publication-date range. Both endpoints are inclusive. Leave either blank for an open boundary, or use **Clear period**. Type `dd.mm.yyyy` or `yyyy-mm-dd`, then press Enter or leave the field; alternatively, use the mini calendar and click its year/month heading to choose a year, month and day. **Today** and **Clear date** are also available. Invalid or reversed dates prevent starting a download. The download panel displays the same period and its **Change period** button returns to those fields.
+
+Mark individual posts using table checkboxes, Space, or Shift-click a range. **Select all matching** uses creator/status/date view filters across all pages. **Clear selection** removes all marks. Paging and changing filters preserve them; the counters below the table distinguish the total marked count from marks inside the current period. Completed posts can also be explicitly selected for a recheck without changing the global setting; already completed files are retained.
+
+| Download mode | Queue contents |
+| --- | --- |
+| All unfinished posts | Incomplete posts from active creators in the publication period |
+| All posts (recheck and download) | The first mode when the recheck setting is enabled; includes completed posts |
+| New posts only | Unfinished posts carrying the persistent New marker |
+| Retry problem posts | Failed, partial, skipped or incomplete posts, missing files, and pending/failed archive extraction |
+| Selected posts | Manually marked posts belonging to active creators and inside the shared period |
+
+The panel displays at most five preview posts, an **And N more posts** label, and complete queue totals. **Start download** freezes queue membership and order. You can browse pages, adjust view filters or dates, and change marks for a later run without changing the running queue. Creator queue editing remains locked during the operation. Post-by-URL downloads remain separate from batch selection.
 
 ### Skipping, stopping and retrying
 
@@ -208,7 +236,7 @@ Preview the interface using sample data:
 dotnet run --project UiHarness/UiHarness.csproj -c Release
 ```
 
-The UI harness writes its own `ui-settings-1.9.json` and `Downloads-1.9` library next to its executable. It does not use the production application's settings or library. Some backend test entry points also support explicitly requested live probes; those are not part of the default offline test run.
+The UI harness writes its own `ui-settings-1.10.json` and `Downloads-1.10` library next to its executable. It does not use the production application's settings or library. Some backend test entry points also support explicitly requested live probes; those are not part of the default offline test run.
 
 ## Source layout
 
@@ -216,6 +244,13 @@ The UI harness writes its own `ui-settings-1.9.json` and `Downloads-1.9` library
 | --- | --- |
 | `Pawchive/Pawchive.csproj` | Windows Forms application, package reference, version, and embedded resources |
 | `Pawchive/Program.cs` | Application entry point, operations, filtering, pagination, progress, and history integration |
+| `Pawchive/EmbeddedDialogs.cs` | Embedded modal stack, keyboard navigation, results, messages and focus restoration |
+| `Pawchive/EmbeddedPickers.cs` | Embedded folder browser and spectrum/hex color picker |
+| `Pawchive/DownloadPlanning.cs` | Shared date controls and table marks across pages |
+| `Pawchive/DownloadDialog.cs` | Download choice cards, period summary, bounded queue preview and totals |
+| `Pawchive/PlanningControls.cs` | Integrated date inputs, mode cards and themed section dividers |
+| `Pawchive/DownloadSelection.cs` | Independent queue-building rules and inclusive publication-date matching |
+| `Pawchive/DateCalendar.cs` | Themed year/month/day picker |
 | `Pawchive/PostTableLayout.cs` | Locked post columns sized for both interface languages, with flexible space allocated to creator names and post titles |
 | `Pawchive/Workspace.cs` | Workspace layout, creator/post dialogs, settings, and language switching |
 | `Pawchive/CreatorWorkspace.cs` | Active/inactive groups, saved queue order, detailed manager, drag/drop, transfer highlight and row animation |

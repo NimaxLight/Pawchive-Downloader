@@ -96,6 +96,7 @@ public class Post
     string? savedFingerprint;
     public required Creator Creator { get; init; }
     public required JsonElement Raw { get; init; }
+    public bool IsNew { get; set; }
     public string Id => Str(Raw, "id");
     public string Key => Creator.Key + "/" + Id;
     public string Title => Str(Raw, "title");
@@ -508,6 +509,9 @@ public class Api : IDisposable
             foreach (var pair in catalog.ListingSignatures) listingSignatures.TryAdd(pair.Key, pair.Value);
         }
         catalog.Creator = creator;
+        var newIds = catalog.NewPostIds.ToHashSet();
+        if (catalog.Complete) foreach (var id in found.Keys) if (!old.ContainsKey(id)) newIds.Add(id);
+        catalog.NewPostIds = newIds.Where(found.ContainsKey).ToList();
         foreach (var id in catalog.DirectPostIds)
             if (!found.ContainsKey(id) && old.TryGetValue(id, out var directPost)) found[id] = directPost;
         catalog.Posts = found.Values.OrderByDescending(p => Post.Str(p, "published"), StringComparer.Ordinal).ToList();
@@ -524,7 +528,7 @@ public class Api : IDisposable
         var json = await Json(post.Creator.Service + "/user/" + post.Creator.Id + "/post/" + post.Id, token);
         if (json.TryGetProperty("post", out var nested)) json = nested;
         if (Post.Str(json, "id") != post.Id) throw new IOException("API вернул другой пост.");
-        return new Post { Creator = post.Creator, Raw = json.Clone() };
+        return new Post { Creator = post.Creator, Raw = json.Clone(), IsNew = post.IsNew };
     }
     public async Task<Post> GetPost(PostAddress address, CancellationToken token)
     {

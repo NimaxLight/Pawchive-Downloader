@@ -12,6 +12,7 @@ public class Catalog
     public List<JsonElement> Posts { get; set; } = [];
     public Dictionary<string, string> ListingSignatures { get; set; } = [];
     public List<string> DirectPostIds { get; set; } = [];
+    public List<string> NewPostIds { get; set; } = [];
     public static string FilePath(string root, Creator creator) => Path.Combine(root, ".pawchive", "catalog", Storage.Hash(creator.Key)[..24] + ".json");
     public static Catalog Load(string root, Creator creator)
     {
@@ -20,7 +21,7 @@ public class Catalog
         try
         {
             var catalog = JsonSerializer.Deserialize<Catalog>(File.ReadAllText(path)) ?? throw new IOException("Пустой файл");
-            if (catalog.Version != 1 || catalog.Creator.Key != creator.Key || catalog.Posts is null || catalog.DirectPostIds is null || catalog.Posts.Any(p => p.ValueKind != JsonValueKind.Object || Post.Str(p, "id").Length == 0))
+            if (catalog.Version != 1 || catalog.Creator.Key != creator.Key || catalog.Posts is null || catalog.DirectPostIds is null || catalog.NewPostIds is null || catalog.Posts.Any(p => p.ValueKind != JsonValueKind.Object || Post.Str(p, "id").Length == 0))
                 throw new IOException("Неизвестный формат");
             return catalog;
         }
@@ -38,7 +39,17 @@ public class Catalog
         }
         return result;
     }
-    public List<Post> ToPosts(Creator? creator = null) => Posts.Select(raw => new Post { Creator = creator ?? Creator, Raw = raw.Clone() }).ToList();
+    public List<Post> ToPosts(Creator? creator = null)
+    {
+        var fresh = NewPostIds.ToHashSet();
+        return Posts.Select(raw => new Post { Creator = creator ?? Creator, Raw = raw.Clone(), IsNew = fresh.Contains(Post.Str(raw, "id")) }).ToList();
+    }
+    public static async Task MarkDownloaded(string root, Post post)
+    {
+        if (!post.IsNew) return;
+        await Task.Run(() => { var catalog = Load(root, post.Creator); if (catalog.NewPostIds.Remove(post.Id)) catalog.Save(root); });
+        post.IsNew = false;
+    }
     public void Save(string root) => Storage.WriteJson(FilePath(root, Creator), this);
     public static async Task SavePost(string root, Post post, bool direct = false)
     {

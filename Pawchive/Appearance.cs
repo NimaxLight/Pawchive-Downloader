@@ -75,7 +75,7 @@ static class WindowsAppearance
     }
 }
 
-public enum AppIcon { None, Archive, Folder, Settings, Plus, Trash, Refresh, Scan, Download, Stop, Link, History, Left, Right, Image, Video, File }
+public enum AppIcon { None, Archive, Folder, Settings, Plus, Trash, Refresh, Scan, Download, Stop, Link, History, Left, Right, Image, Video, File, Calendar }
 
 static class BrandAssets
 {
@@ -152,6 +152,7 @@ static class IconDrawing
         void Line(float a, float b, float c, float d) => g.DrawLine(pen, a, b, c, d);
         switch (icon)
         {
+            case AppIcon.Calendar: g.DrawRectangle(pen, 3, 4, 14, 13); Line(3, 8, 17, 8); Line(6, 2, 6, 6); Line(14, 2, 14, 6); Line(6, 11, 8, 11); Line(12, 11, 14, 11); Line(6, 14, 8, 14); break;
             case AppIcon.Plus: Line(10, 4, 10, 16); Line(4, 10, 16, 10); break;
             case AppIcon.Stop: g.DrawRectangle(pen, 5, 5, 10, 10); break;
             case AppIcon.Left: g.DrawLines(pen, [new(12, 4), new(6, 10), new(12, 16)]); break;
@@ -183,6 +184,8 @@ static class IconDrawing
 public class ModernButton : Button
 {
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Integrated { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public AppIcon Glyph { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool Primary { get; set; }
@@ -205,8 +208,8 @@ public class ModernButton : Button
         if (pressed && Enabled) fill = AppPalette.Blend(fill, p.Text, .1);
         var text = !Enabled ? AppPalette.Blend(p.Muted, p.Surface, .45) : Primary ? p.AccentText : p.Text;
         using var shape = IconDrawing.Rounded(new(1, 1, Width - 3, Height - 3), (int)(7 * scale));
-        using var brush = new SolidBrush(fill); e.Graphics.FillPath(brush, shape);
-        using (var pen = new Pen(Focused ? p.AccentInk : Primary && Enabled ? fill : p.Border, Focused ? 2 : 1)) e.Graphics.DrawPath(pen, shape);
+        using var brush = new SolidBrush(Integrated && !hot ? Parent?.BackColor ?? p.Surface : fill); e.Graphics.FillPath(brush, shape);
+        if (!Integrated) using (var pen = new Pen(Focused ? p.AccentInk : Primary && Enabled ? fill : p.Border, Focused ? 2 : 1)) e.Graphics.DrawPath(pen, shape);
         int icon = Glyph == AppIcon.None ? 0 : (int)(17 * scale), gap = icon > 0 && Text.Length > 0 ? (int)(7 * scale) : 0;
         var textSize = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding);
         int total = Math.Min(Width - (int)(18 * scale), textSize.Width + icon + gap), x = Math.Max((int)(8 * scale), (Width - total) / 2);
@@ -254,7 +257,7 @@ public class ModernCombo : ComboBox
     }
     protected override void OnDrawItem(DrawItemEventArgs e)
     {
-        var p = Palette ?? AppPalette.Create(false, Color.DimGray); bool selected = (e.State & DrawItemState.Selected) != 0;
+        var p = Palette ?? AppPalette.Create(false, Color.DimGray); bool selected = DroppedDown && !e.State.HasFlag(DrawItemState.ComboBoxEdit) && e.State.HasFlag(DrawItemState.Selected);
         using var fill = new SolidBrush(selected ? p.Selection : p.Surface); e.Graphics.FillRectangle(fill, e.Bounds);
         var rect = e.Bounds; rect.Inflate(-8, 0);
         TextRenderer.DrawText(e.Graphics, e.Index >= 0 ? GetItemText(Items[e.Index]) : Text, Font, rect,
@@ -328,18 +331,28 @@ public class GridHost : SurfacePanel
 {
     readonly DataGridView grid;
     readonly ThemeScrollBar scrollbar = new() { Dock = DockStyle.Fill, AccessibleName = "Прокрутка списка" };
+    readonly ThemeScrollBar? horizontal;
+    readonly TableLayoutPanel layout;
     bool syncing;
     public GridHost(DataGridView grid)
     {
         this.grid = grid; Margin = Padding.Empty;
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
         layout.ColumnStyles.Add(new(SizeType.Percent, 100)); layout.ColumnStyles.Add(new(SizeType.Absolute, 14)); layout.RowStyles.Add(new(SizeType.Percent, 100));
-        grid.ScrollBars = ScrollBars.Horizontal; grid.Margin = Padding.Empty;
+        layout.RowStyles.Add(new(SizeType.Absolute, 0));
+        grid.ScrollBars = ScrollBars.None; grid.Margin = Padding.Empty;
         layout.Controls.Add(grid, 0, 0); layout.Controls.Add(scrollbar, 1, 0); Controls.Add(layout);
+        if (grid.ColumnHeadersVisible)
+        {
+            horizontal = new ThemeScrollBar { Horizontal = true, Dock = DockStyle.Fill, AccessibleName = "Горизонтальная прокрутка таблицы" };
+            layout.Controls.Add(horizontal, 0, 1);
+            horizontal.ValueChanged += (_, _) => { if (!syncing) grid.HorizontalScrollingOffset = horizontal.Value; };
+        }
         scrollbar.ValueChanged += (_, _) => SetFirst(scrollbar.Value);
         if (grid is WorkspaceGrid themed) themed.WheelScroll = delta => scrollbar.Value += delta;
         grid.Scroll += (_, _) => UpdateRange(); grid.RowsAdded += (_, _) => UpdateRange(); grid.RowsRemoved += (_, _) => UpdateRange();
         grid.SizeChanged += (_, _) => UpdateRange(); grid.HandleCreated += (_, _) => UpdateRange(); grid.ColumnHeadersHeightChanged += (_, _) => UpdateRange();
+        grid.ColumnWidthChanged += (_, _) => UpdateRange();
         Layout += (_, _) => UpdateRange();
     }
     void SetFirst(int value)
@@ -360,6 +373,14 @@ public class GridHost : SurfacePanel
             scrollbar.Viewport = Math.Max(1, visible); scrollbar.Maximum = Math.Max(0, grid.RowCount - Math.Max(1, visible));
             scrollbar.Value = Math.Max(0, grid.FirstDisplayedScrollingRowIndex);
             scrollbar.Visible = scrollbar.Maximum > 0; scrollbar.Invalidate();
+            if (horizontal is not null)
+            {
+                int width = Math.Max(1, grid.ClientSize.Width - (grid.RowHeadersVisible ? grid.RowHeadersWidth : 0));
+                horizontal.Viewport = width; horizontal.Maximum = Math.Max(0, grid.Columns.Cast<DataGridViewColumn>().Where(c => c.Visible).Sum(c => c.Width) - width);
+                horizontal.Value = grid.HorizontalScrollingOffset; horizontal.Visible = horizontal.Maximum > 0;
+                layout.RowStyles[1].Height = horizontal.Visible ? (int)(14 * DeviceDpi / 96f) : 0;
+                horizontal.Invalidate();
+            }
         }
         finally { syncing = false; }
     }
@@ -372,6 +393,8 @@ public class ThemeScrollBar : Control
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public AppPalette? Palette { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool Horizontal { get; set; }
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int Maximum { get => maximum; set { maximum = Math.Max(0, value); Value = this.value; Invalidate(); } }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int Viewport { get => viewport; set { viewport = Math.Max(1, value); Invalidate(); } }
@@ -381,31 +404,35 @@ public class ThemeScrollBar : Control
     public ThemeScrollBar() { DoubleBuffered = true; Width = 14; Margin = Padding.Empty; TabStop = true; AccessibleRole = AccessibleRole.ScrollBar; SetStyle(ControlStyles.Selectable, true); }
     Rectangle Thumb
     {
-        get { int height = Math.Min(Height, Math.Max((int)(26 * DeviceDpi / 96f), (int)(Height * (double)viewport / Math.Max(1, maximum + viewport)))); return new(Math.Max(2, Width / 4), maximum > 0 ? (int)((Height - height) * (double)value / maximum) : 0, Math.Max(3, Width / 2), height); }
+        get { int length = Horizontal ? Width : Height, cross = Horizontal ? Height : Width;
+            int size = Math.Min(length, Math.Max((int)(26 * DeviceDpi / 96f), (int)(length * (double)viewport / Math.Max(1, maximum + viewport))));
+            int offset = maximum > 0 ? (int)((length - size) * (double)value / maximum) : 0;
+            return Horizontal ? new(offset, Math.Max(2, cross / 4), size, Math.Max(3, cross / 2)) : new(Math.Max(2, cross / 4), offset, Math.Max(3, cross / 2), size); }
     }
     protected override void OnPaint(PaintEventArgs e)
     {
         var p = Palette ?? AppPalette.Create(false, Color.Gray); e.Graphics.Clear(BackColor); var thumb = Thumb;
         if (thumb.Width <= 0 || thumb.Height <= 0) return;
         using var brush = new SolidBrush(Focused || hot || dragging ? p.Muted : AppPalette.Blend(p.Muted, BackColor, .35));
-        using var path = IconDrawing.Rounded(thumb, thumb.Width / 2); e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; e.Graphics.FillPath(brush, path);
+        using var path = IconDrawing.Rounded(thumb, Math.Min(thumb.Width, thumb.Height) / 2); e.Graphics.SmoothingMode = SmoothingMode.AntiAlias; e.Graphics.FillPath(brush, path);
     }
     protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hot = true; Invalidate(); }
     protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hot = false; Invalidate(); }
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e); Focus();
-        if (Thumb.Contains(e.Location)) { dragging = true; dragY = e.Y; dragValue = value; Capture = true; }
-        else Value += e.Y < Thumb.Top ? -viewport : viewport;
+        int position = Horizontal ? e.X : e.Y;
+        if (Thumb.Contains(e.Location)) { dragging = true; dragY = position; dragValue = value; Capture = true; }
+        else Value += position < (Horizontal ? Thumb.Left : Thumb.Top) ? -viewport : viewport;
     }
-    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (dragging) Value = dragValue + (int)Math.Round((e.Y - dragY) * (double)maximum / Math.Max(1, Height - Thumb.Height)); }
+    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (dragging) Value = dragValue + (int)Math.Round(((Horizontal ? e.X : e.Y) - dragY) * (double)maximum / Math.Max(1, Horizontal ? Width - Thumb.Width : Height - Thumb.Height)); }
     protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); dragging = false; Capture = false; Invalidate(); }
     protected override void OnMouseWheel(MouseEventArgs e) { base.OnMouseWheel(e); Value -= Math.Sign(e.Delta) * Math.Max(1, SystemInformation.MouseWheelScrollLines); }
-    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown || base.IsInputKey(keyData);
+    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown || base.IsInputKey(keyData);
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        switch (e.KeyCode) { case Keys.Up: Value--; break; case Keys.Down: Value++; break; case Keys.PageUp: Value -= viewport; break; case Keys.PageDown: Value += viewport; break; case Keys.Home: Value = 0; break; case Keys.End: Value = maximum; break; default: return; } e.Handled = true;
+        switch (e.KeyCode) { case Keys.Left: case Keys.Up: Value -= Horizontal ? 32 : 1; break; case Keys.Right: case Keys.Down: Value += Horizontal ? 32 : 1; break; case Keys.PageUp: Value -= viewport; break; case Keys.PageDown: Value += viewport; break; case Keys.Home: Value = 0; break; case Keys.End: Value = maximum; break; default: return; } e.Handled = true;
     }
     protected override AccessibleObject CreateAccessibilityInstance() => new ScrollAccess(this);
     sealed class ScrollAccess(ThemeScrollBar owner) : ControlAccessibleObject(owner) { public override string? Value { get => owner.Value.ToString(); set { if (int.TryParse(value, out int n)) owner.Value = n; } } }

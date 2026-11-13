@@ -242,11 +242,17 @@ public partial class MainForm
     {
         if (authorOverlay is null || authorOverlay.IsDisposed || ClientSize.Width < 1 || ClientSize.Height < 1) return;
         var snapshot = new Bitmap(ClientSize.Width, ClientSize.Height);
-        Controls.Cast<Control>().First(c => c.Dock == DockStyle.Fill && c != authorOverlay).DrawToBitmap(snapshot, new Rectangle(Point.Empty, ClientSize));
+        Controls.Cast<Control>().First(c => c.Dock == DockStyle.Fill && c is not CreatorBackdrop).DrawToBitmap(snapshot, new Rectangle(Point.Empty, ClientSize));
         authorOverlay.UpdateSnapshot(snapshot);
     }
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        if (EmbeddedDialogKey(keyData)) return true;
+        if (downloadManager is not null)
+        {
+            if (keyData == Keys.Escape) { CloseDownloadChoice(); return true; }
+            if (keyData == Keys.Tab || keyData == (Keys.Shift | Keys.Tab)) { downloadManager.SelectNextControl(FocusedCreatorControl(downloadManager), keyData == Keys.Tab, true, true, true); return true; }
+        }
         if (authorManager is not null)
         {
             if (keyData == Keys.Escape) { CloseAuthorManager(); return true; }
